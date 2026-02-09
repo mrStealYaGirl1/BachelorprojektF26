@@ -1,5 +1,4 @@
 idf_component_register(
-    SRCS "main.cpp"
+    SRCS "imu.c"
     INCLUDE_DIRS "."
-    REQUIRES led_strip
 )
