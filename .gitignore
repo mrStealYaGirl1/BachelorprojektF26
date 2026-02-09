@@ -1,0 +1,14 @@
+# ESP-IDF
+build/
+sdkconfig
+sdkconfig.old
+
+# CMake / Ninja
+CMakeCache.txt
+CMakeFiles/
+*.ninja
+.ninja_*
+
+# VS Code
+.vscode/*
+!.vscode/extensions.json
