@@ -7,6 +7,8 @@
 #include "driver/spi_master.h"
 #include "driver/gpio.h"
 
+
+
 static const char *TAG = "IMU";
 
 // ====== PIN CONFIGURATION ======
@@ -109,6 +111,8 @@ void imu_init(void)
     gpio_set_direction(PIN_CS, GPIO_MODE_OUTPUT);
     gpio_set_level(PIN_CS, 0);
     vTaskDelay(pdMS_TO_TICKS(10));
+    gpio_set_level(PIN_CS, 1);
+    vTaskDelay(pdMS_TO_TICKS(1));
 
     ESP_ERROR_CHECK(bmi270_spi_setup());
 
