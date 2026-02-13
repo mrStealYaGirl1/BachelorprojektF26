@@ -7,8 +7,6 @@
 #include "driver/spi_master.h"
 #include "driver/gpio.h"
 
-
-
 static const char *TAG = "IMU";
 
 // ====== PIN CONFIGURATION ======
@@ -156,18 +154,40 @@ void imu_task(void *pvParameters)
 }
 
 
-// void imu_init(void)
-// {
-//     ESP_LOGI(TAG, "IMU init (stub)");
-// }
 
-// void imu_task(void *pvParameters)
-// {
-//     ESP_LOGI(TAG, "IMU task started");
 
-//     while (1)
-//     {
-//         ESP_LOGI(TAG, "IMU running");
-//         vTaskDelay(pdMS_TO_TICKS(1000));
-//     }
-// }
+/* Kathrines suggestion for imu.c
+// imu.c: 
+#include "imu.h"
+#include "esp_log.h"
+#include "freertos/task.h"
+#include "bmi270.h"
+
+static const char *TAG = "IMU";
+static bmi270_t s_bmi;
+
+// =====================================================
+// IMU INIT
+// =====================================================
+void imu_init(void)
+{
+    ESP_LOGI(TAG, "IMU init...");
+    esp_err_t err = bmi270_init(&s_bmi);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "BMI270 init failed: %s", esp_err_to_name(err));
+    }
+}
+// =====================================================
+// TASK
+// =====================================================
+void imu_task(void *pvParameters)
+{
+    (void)pvParameters;
+    ESP_LOGI(TAG, "IMU task started");
+
+    while (1) {
+        ESP_LOGI(TAG, "IMU running...");
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
+*/
