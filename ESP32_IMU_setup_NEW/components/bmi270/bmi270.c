@@ -1,3 +1,6 @@
+#include <stdint.h>
+#include <string.h>
+
 #include "bmi270.h"
 #include "bmi270_config.h"
 
