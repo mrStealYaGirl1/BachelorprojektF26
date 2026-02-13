@@ -4,6 +4,9 @@
 #include "bmi270.h"
 #include "bmi270_config.h"
 
+#include "esp_log.h"
+static const char *TAG = "BMI270";
+
 /* ===================== Registers ===================== */
 
 #define BMI270_REG_CHIP_ID        0x00
@@ -33,6 +36,12 @@ static bmi270_status_t bmi270_soft_reset(bmi270_dev_t *dev)
     if (dev->write(BMI270_REG_CMD, &cmd, 1, dev->intf_ptr) != BMI270_OK)
         return BMI270_E_COMM;
 
+    // Vent længere
+    dev->delay_us(20000, dev->intf_ptr); // 20 ms
+
+    // Dummy read (tøm/”sync” SPI)
+    uint8_t dummy;
+    dev->read(BMI270_REG_CHIP_ID, &dummy, 1, dev->intf_ptr);
     dev->delay_us(2000, dev->intf_ptr);
 
     return BMI270_OK;
@@ -51,19 +60,31 @@ static bmi270_status_t bmi270_upload_config(bmi270_dev_t *dev)
     data = 0x00;
     if (dev->write(BMI270_REG_PWR_CONF, &data, 1, dev->intf_ptr) != BMI270_OK)
         return BMI270_E_COMM;
-
-    dev->delay_us(450, dev->intf_ptr);
+    dev->delay_us(5000, dev->intf_ptr);   // <-- 5 ms (ikke 450 us)
 
     /* Set INIT_CTRL = 0 */
     data = 0x00;
     if (dev->write(BMI270_REG_INIT_CTRL, &data, 1, dev->intf_ptr) != BMI270_OK)
         return BMI270_E_COMM;
+    dev->delay_us(2000, dev->intf_ptr);   // <-- 2 ms
+
+
+    // /* Disable advanced power save */
+    // data = 0x00;
+    // if (dev->write(BMI270_REG_PWR_CONF, &data, 1, dev->intf_ptr) != BMI270_OK)
+    //     return BMI270_E_COMM;
+
+    // dev->delay_us(450, dev->intf_ptr);
+
+    // /* Set INIT_CTRL = 0 */
+    // data = 0x00;
+    // if (dev->write(BMI270_REG_INIT_CTRL, &data, 1, dev->intf_ptr) != BMI270_OK)
+    //     return BMI270_E_COMM;
 
     /* Upload config in 16-byte chunks */
     while (index < bmi270_config_size)
     {
         uint16_t chunk = BMI270_CONFIG_CHUNK_SIZE;
-
         if (index + chunk > bmi270_config_size)
             chunk = bmi270_config_size - index;
 
@@ -76,27 +97,42 @@ static bmi270_status_t bmi270_upload_config(bmi270_dev_t *dev)
         if (dev->write(BMI270_REG_INIT_ADDR_0, addr, 2, dev->intf_ptr) != BMI270_OK)
             return BMI270_E_COMM;
 
+        dev->delay_us(50, dev->intf_ptr);  // lille pause efter addr
+
         if (dev->write(BMI270_REG_INIT_DATA,
-                       &bmi270_config_file[index],
-                       chunk,
-                       dev->intf_ptr) != BMI270_OK)
+                    &bmi270_config_file[index],
+                    chunk,
+                    dev->intf_ptr) != BMI270_OK)
             return BMI270_E_COMM;
+
+        dev->delay_us(200, dev->intf_ptr); // lille pause efter data
 
         index += chunk;
     }
 
-    /* Set INIT_CTRL = 1 */
+    ESP_LOGI(TAG, "Uploaded %u bytes (expected %u)", (unsigned)index, (unsigned)bmi270_config_size);
+
+
+    /* Set INIT_CTRL = 1 (start init) */
     data = 0x01;
     if (dev->write(BMI270_REG_INIT_CTRL, &data, 1, dev->intf_ptr) != BMI270_OK)
         return BMI270_E_COMM;
 
-    dev->delay_us(20000, dev->intf_ptr);
+    /* Poll INTERNAL_STAT until init_ok */
+    uint8_t stat = 0;
+    for (int i = 0; i < 200; i++) {           // ~200 ms max
+        if (dev->read(BMI270_REG_INTERNAL_STAT, &stat, 1, dev->intf_ptr) != BMI270_OK)
+            return BMI270_E_COMM;
 
-    /* Check init complete */
-    if (dev->read(BMI270_REG_INTERNAL_STAT, &data, 1, dev->intf_ptr) != BMI270_OK)
-        return BMI270_E_COMM;
+        if ((stat & 0x0F) == 0x01)            // init_ok
+            break;
 
-    if ((data & 0x01) == 0)
+        dev->delay_us(1000, dev->intf_ptr);   // 1 ms
+    }
+
+    ESP_LOGI(TAG, "INTERNAL_STAT = 0x%02X", stat);
+
+    if ((stat & 0x0F) != 0x01)
         return BMI270_E_INVALID;
 
     return BMI270_OK;
@@ -117,6 +153,8 @@ bmi270_status_t bmi270_init(bmi270_dev_t *dev)
 
     if (dev->read(BMI270_REG_CHIP_ID, &chip_id, 1, dev->intf_ptr) != BMI270_OK)
         return BMI270_E_COMM;
+
+    ESP_LOGI(TAG, "chip_id = 0x%02X", chip_id);
 
     if (chip_id != BMI270_CHIP_ID_VALUE)
         return BMI270_E_INVALID;

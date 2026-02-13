@@ -34,6 +34,8 @@ static esp_err_t spi_write(uint8_t reg,
     spi_transaction_t t = {0};
     t.length = (1 + len) * 8;
     t.tx_buffer = tx;
+    t.rxlength = 0;
+
 
     return spi_device_transmit(s_bmi_spi, &t);
 }
@@ -43,24 +45,28 @@ static esp_err_t spi_read(uint8_t reg,
                           uint16_t len,
                           void *intf_ptr)
 {
-    uint8_t tx[1 + len];
-    uint8_t rx[1 + len];
+    (void)intf_ptr;
+
+    // +2: 1 byte addr + 1 byte dummy + len data
+    uint8_t tx[2 + len];
+    uint8_t rx[2 + len];
 
     tx[0] = reg | 0x80;   // read
-    memset(&tx[1], 0, len);
+    tx[1] = 0x00;         // dummy byte (VIGTIG!)
+    memset(&tx[2], 0, len);
 
     spi_transaction_t t = {0};
-    t.length = (1 + len) * 8;
+    t.length = (2 + len) * 8;
     t.tx_buffer = tx;
     t.rx_buffer = rx;
 
     esp_err_t err = spi_device_transmit(s_bmi_spi, &t);
-    if (err != ESP_OK)
-        return err;
+    if (err != ESP_OK) return err;
 
-    memcpy(data, &rx[1], len);
+    memcpy(data, &rx[2], len); // data starter efter addr + dummy
     return ESP_OK;
 }
+
 
 static void spi_delay(uint32_t us, void *intf_ptr)
 {
@@ -82,10 +88,15 @@ static esp_err_t bmi270_spi_setup(void)
     };
 
     spi_device_interface_config_t devcfg = {
-        .clock_speed_hz = 1 * 1000 * 1000,
-        .mode = 3,
+        .clock_speed_hz = 200 * 1000, //changed temporarily to 200 kHz - before "1 * 1000 * 1000,"
+        .mode = 0,
         .spics_io_num = PIN_CS,
         .queue_size = 1,
+
+        // VIGTIGT: giv CS lidt tid før/efter
+        .cs_ena_pretrans = 10,
+        .cs_ena_posttrans = 10,
+
     };
 
     ESP_ERROR_CHECK(spi_bus_initialize(SPI2_HOST, &buscfg, SPI_DMA_CH_AUTO));
@@ -102,9 +113,20 @@ void imu_init(void)
 {
     ESP_LOGI(TAG, "Initializing BMI270...");
 
+    // // 🔴 CRITICAL: Force CS LOW before SPI init
+    // gpio_set_direction(PIN_CS, GPIO_MODE_OUTPUT);
+    // gpio_set_level(PIN_CS, 0);
+    // vTaskDelay(pdMS_TO_TICKS(10));
+    // gpio_set_level(PIN_CS, 1);
+    // vTaskDelay(pdMS_TO_TICKS(1));
+
     ESP_ERROR_CHECK(bmi270_spi_setup());
 
-    vTaskDelay(pdMS_TO_TICKS(50));
+    vTaskDelay(pdMS_TO_TICKS(100));
+
+    uint8_t id = 0xAA;
+    esp_err_t e = spi_read(0x00, &id, 1, NULL);
+    ESP_LOGI(TAG, "RAW read chip_id err=%d id=0x%02X", (int)e, id);
 
     s_bmi.read = spi_read;
     s_bmi.write = spi_write;
@@ -136,8 +158,8 @@ void imu_task(void *pvParameters)
 
     while (1)
     {
-        if (bmi270_read_accel(&s_bmi, &ax, &ay, &az) == ESP_OK &&
-            bmi270_read_gyro(&s_bmi, &gx, &gy, &gz) == ESP_OK)
+        if (bmi270_read_accel(&s_bmi, &ax, &ay, &az) == BMI270_OK &&
+            bmi270_read_gyro(&s_bmi, &gx, &gy, &gz) == BMI270_OK)
         {
             ESP_LOGI(TAG,
                      "ACC: %d %d %d | GYRO: %d %d %d",
