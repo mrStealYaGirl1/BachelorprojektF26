@@ -4,13 +4,36 @@
 #include "esp_log.h"
 #include "driver/spi_master.h"
 #include "esp_rom_sys.h"
+#include "esp_timer.h"
+#include <math.h>
 
 #include "bmi2.h"
 #include "bmi270.h"
 
 static const char *TAG = "IMU";
 
-/* ================== BIAS VARIABLER ================== */
+/* =====================================================
+   RINGBUFFER
+===================================================== */
+
+static imu_ringbuffer_t imu_rb;
+
+/* =====================================================
+   IMPACT DETECTION DEFINES
+===================================================== */
+
+#define IMPACT_ENERGY_WINDOW      8
+#define IMPACT_THRESHOLD          20.0f
+#define IMPACT_COOLDOWN_SAMPLES   250   // 1 sekund ved 250 Hz
+
+static float energy_buffer[IMPACT_ENERGY_WINDOW];
+static uint8_t energy_index = 0;
+static float energy_sum = 0;
+static uint32_t cooldown_counter = 0;
+
+/* =====================================================
+   BIAS VARIABLER
+===================================================== */
 
 static float gyro_bias_x = 0;
 static float gyro_bias_y = 0;
@@ -22,8 +45,11 @@ static float acc_bias_z = 0;
 
 /* Forward declaration */
 static void imu_calibrate(void);
+static uint8_t detect_impact(float acc_dynamic);
 
-/* ================== SPI PINS ================== */
+/* =====================================================
+   SPI PINS
+===================================================== */
 
 #define PIN_MOSI  35
 #define PIN_MISO  37
@@ -165,10 +191,10 @@ void imu_init(void)
     uint8_t sens_list[2] = { BMI2_ACCEL, BMI2_GYRO };
     bmi2_sensor_enable(sens_list, 2, &s_bmi);
 
-    ESP_LOGI(TAG, "BMI270 sensors enabled");
-
-    /* Kør kalibrering */
+    imu_ringbuffer_init();
     imu_calibrate();
+
+    ESP_LOGI(TAG, "IMU ready");
 }
 
 /* =====================================================
@@ -216,17 +242,37 @@ static void imu_calibrate(void)
     gyro_bias_y = sum_gy / samples;
     gyro_bias_z = sum_gz / samples;
 
-    ESP_LOGI(TAG, "ACC bias: %.3f %.3f %.3f",
-         acc_bias_x,
-         acc_bias_y,
-         acc_bias_z);
-
-    ESP_LOGI(TAG, "GYRO bias: %.3f %.3f %.3f",
-            gyro_bias_x,
-            gyro_bias_y,
-            gyro_bias_z);
-
     ESP_LOGI(TAG, "Calibration done");
+}
+
+/* =====================================================
+   IMPACT DETECTION
+===================================================== */
+static uint8_t detect_impact(float acc_dynamic)
+{
+    float energy = acc_dynamic * acc_dynamic;
+
+    energy_sum -= energy_buffer[energy_index];
+    energy_buffer[energy_index] = energy;
+    energy_sum += energy;
+
+    energy_index++;
+    if (energy_index >= IMPACT_ENERGY_WINDOW)
+        energy_index = 0;
+
+    if (cooldown_counter > 0)
+    {
+        cooldown_counter--;
+        return 0;
+    }
+
+    if (energy_sum > IMPACT_THRESHOLD)
+    {
+        cooldown_counter = IMPACT_COOLDOWN_SAMPLES;
+        return 1;
+    }
+
+    return 0;
 }
 
 /* =====================================================
@@ -235,409 +281,67 @@ static void imu_calibrate(void)
 void imu_task(void *pvParameters)
 {
     struct bmi2_sens_data sensor_data;
-
-    const float scale = 9.81f / 10.37f;   // Gain-korrektion
+    const float scale = 9.81f / 10.37f;
 
     while (1)
     {
         if (bmi2_get_sensor_data(&sensor_data, &s_bmi) == BMI2_OK)
         {
-            /* === ACC raw → m/s² → scale → bias removal === */
-            float ax_ms2 = ((sensor_data.acc.x / 16384.0f) * 9.81f) * scale - acc_bias_x;
-            float ay_ms2 = ((sensor_data.acc.y / 16384.0f) * 9.81f) * scale - acc_bias_y;
-            float az_ms2 = ((sensor_data.acc.z / 16384.0f) * 9.81f) * scale - acc_bias_z;
+            /* -------- GEM RÅ SAMPLE -------- */
+            imu_sample_t sample;
 
-            /* === GYRO raw → deg/s → bias removal === */
-            float gx_dps = (sensor_data.gyr.x * (2000.0f / 32768.0f)) - gyro_bias_x;
-            float gy_dps = (sensor_data.gyr.y * (2000.0f / 32768.0f)) - gyro_bias_y;
-            float gz_dps = (sensor_data.gyr.z * (2000.0f / 32768.0f)) - gyro_bias_z;
+            sample.ax = sensor_data.acc.x;
+            sample.ay = sensor_data.acc.y;
+            sample.az = sensor_data.acc.z;
+            sample.gx = sensor_data.gyr.x;
+            sample.gy = sensor_data.gyr.y;
+            sample.gz = sensor_data.gyr.z;
+            sample.timestamp_us = esp_timer_get_time();
 
-            ESP_LOGI(TAG,
-                     "ACC [m/s²]: %.2f %.2f %.2f | GYRO [dps]: %.2f %.2f %.2f",
-                     ax_ms2, ay_ms2, az_ms2,
-                     gx_dps, gy_dps, gz_dps);
+            imu_ringbuffer_push(&sample);
+
+            /* -------- FLOAT VERSION -------- */
+
+            float ax = ((sensor_data.acc.x / 16384.0f) * 9.81f) * scale - acc_bias_x;
+            float ay = ((sensor_data.acc.y / 16384.0f) * 9.81f) * scale - acc_bias_y;
+            float az = ((sensor_data.acc.z / 16384.0f) * 9.81f) * scale - acc_bias_z;
+
+            float acc_mag = sqrtf(ax*ax + ay*ay + az*az);
+            float acc_dynamic = acc_mag - 9.81f;
+
+            if (detect_impact(acc_dynamic))
+            {
+                ESP_LOGI(TAG, "🔥 IMPACT DETECTED 🔥");
+            }
         }
 
-        vTaskDelay(pdMS_TO_TICKS(4));   // ~250 Hz
+        vTaskDelay(pdMS_TO_TICKS(4));
     }
 }
 
-
-// #include "imu.h"
-// #include "freertos/FreeRTOS.h"
-// #include "freertos/task.h"
-// #include "esp_log.h"
-// #include "driver/spi_master.h"
-// #include "driver/gpio.h"
-// #include "bmi270.h"
-// #include "esp_rom_sys.h"
-
-// static const char *TAG = "IMU";
-
-// /* ===== Pins ===== */
-// #define PIN_MOSI  35
-// #define PIN_SCLK  36
-// #define PIN_MISO  37
-// #define PIN_CS    10
-
-// static spi_device_handle_t s_bmi_spi = NULL;
-// static bmi270_dev_t s_bmi;
-
-// /* =====================================================
-//    SPI LOW-LEVEL FUNCTIONS FOR BMI270 DRIVER
-// ===================================================== */
-
-// static bmi270_status_t spi_write(uint8_t reg,
-//                         const uint8_t *data,
-//                         uint16_t len,
-//                         void *intf_ptr)
-// {
-//     spi_device_handle_t dev = (spi_device_handle_t)intf_ptr;
-
-//     uint8_t tx[1 + len];
-//     tx[0] = reg & 0x7F;   // write
-//     memcpy(&tx[1], data, len);
-
-//     spi_transaction_t t = {0};
-//     t.length = (1 + len) * 8;
-//     t.tx_buffer = tx;
-
-//     if (spi_device_transmit(dev, &t) != ESP_OK)
-//         return -1;
-
-//     return 0;
-// }
-
-// static bmi270_status_t spi_read(uint8_t reg_addr,
-//                                 uint8_t *data,
-//                                 uint16_t len,
-//                                 void *intf_ptr)
-// {
-//     spi_device_handle_t dev = (spi_device_handle_t)intf_ptr;
-
-//     uint8_t tx[2 + len];
-//     uint8_t rx[2 + len];
-
-//     tx[0] = reg_addr | 0x80;  // READ
-//     tx[1] = 0x00;             // Dummy
-//     memset(&tx[2], 0, len);
-
-//     spi_transaction_t t = {0};
-//     t.length = (2 + len) * 8;
-//     t.tx_buffer = tx;
-//     t.rx_buffer = rx;
-
-//     if (spi_device_transmit(dev, &t) != ESP_OK)
-//         return -1;
-
-//     memcpy(data, &rx[2], len);
-
-//     return 0;
-// }
-
-// static void spi_delay(uint32_t us, void *intf_ptr)
-// {
-//     (void)intf_ptr;
-//     esp_rom_delay_us(us);
-// }
-
-// /* =====================================================
-//    SPI SETUP
-// ===================================================== */
-
-// static esp_err_t bmi270_spi_setup(void)
-// {
-//     spi_bus_config_t buscfg = {
-//         .mosi_io_num = PIN_MOSI,
-//         .miso_io_num = PIN_MISO,
-//         .sclk_io_num = PIN_SCLK,
-//         .quadwp_io_num = -1,
-//         .quadhd_io_num = -1,
-//     };
-
-//     spi_device_interface_config_t devcfg = {
-//         .clock_speed_hz = 1 * 1000 * 1000,  // 1 MHz (sikkert under init)
-//         .mode = 0,
-//         .spics_io_num = PIN_CS,
-//         .queue_size = 1,
-//         .cs_ena_pretrans = 10,
-//         .cs_ena_posttrans = 10,
-//     };
-
-//     ESP_ERROR_CHECK(spi_bus_initialize(SPI2_HOST, &buscfg, SPI_DMA_CH_AUTO));
-//     ESP_ERROR_CHECK(spi_bus_add_device(SPI2_HOST, &devcfg, &s_bmi_spi));
-
-//     return ESP_OK;
-// }
-
-// /* =====================================================
-//    IMU INIT
-// ===================================================== */
-
-// void imu_init(void)
-// {
-//     ESP_LOGI(TAG, "Initializing BMI270...");
-
-//     ESP_ERROR_CHECK(bmi270_spi_setup());
-//     vTaskDelay(pdMS_TO_TICKS(100));
-
-//     /* RAW test read */
-//     uint8_t id = 0xAA;
-//     spi_read(0x00, &id, 1, s_bmi_spi);
-//     ESP_LOGI(TAG, "RAW read chip_id = 0x%02X", id);
-
-//     /* Link driver */
-//     s_bmi.read = spi_read;
-//     s_bmi.write = spi_write;
-//     s_bmi.delay_us = spi_delay;
-//     s_bmi.intf_ptr = s_bmi_spi;   // 🔥 MEGET vigtigt
-
-//     esp_err_t err = bmi270_init(&s_bmi);
-
-//     if (err != ESP_OK)
-//     {
-//         ESP_LOGE(TAG, "BMI270 init failed!");
-//         return;
-//     }
-
-//     ESP_LOGI(TAG, "BMI270 initialized successfully!");
-
-//     bmi270_enable_accel(&s_bmi);
-//     bmi270_enable_gyro(&s_bmi);
-// }
-
-// /* =====================================================
-//    TASK
-// ===================================================== */
-
-// void imu_task(void *pvParameters)
-// {
-//     int16_t ax, ay, az;
-//     int16_t gx, gy, gz;
-
-//     while (1)
-//     {
-//         if (bmi270_read_accel(&s_bmi, &ax, &ay, &az) == BMI270_OK &&
-//             bmi270_read_gyro(&s_bmi, &gx, &gy, &gz) == BMI270_OK)
-//         {
-//             ESP_LOGI(TAG,
-//                      "ACC: %d %d %d | GYRO: %d %d %d",
-//                      ax, ay, az,
-//                      gx, gy, gz);
-//         }
-
-//         vTaskDelay(pdMS_TO_TICKS(500));
-//     }
-// }
-
-// #include "imu.h"
-// #include "freertos/FreeRTOS.h"
-// #include "freertos/task.h"
-// #include "esp_log.h"
-// #include "driver/spi_master.h"
-// #include "driver/gpio.h"
-// #include "bmi270.h"
-// #include "esp_rom_sys.h"   // <-- ADD THIS
-
-// static const char *TAG = "IMU";
-
-// /* ===== Pins ===== */
-// #define PIN_MOSI  35
-// #define PIN_SCLK  36
-// #define PIN_MISO  37
-// #define PIN_CS    10
-
-// static spi_device_handle_t s_bmi_spi = NULL;
-// static bmi270_dev_t s_bmi;
-
-// /* =====================================================
-//    SPI LOW-LEVEL FUNCTIONS FOR BMI270 DRIVER
-// ===================================================== */
-
-// static esp_err_t spi_write(uint8_t reg,
-//                            const uint8_t *data,
-//                            uint16_t len,
-//                            void *intf_ptr)
-// {
-//     uint8_t tx[1 + len];
-//     tx[0] = reg & 0x7F;   // write
-//     memcpy(&tx[1], data, len);
-
-//     spi_transaction_t t = {0};
-//     t.length = (1 + len) * 8;
-//     t.tx_buffer = tx;
-//     t.rxlength = 0;
-
-
-//     return spi_device_transmit(s_bmi_spi, &t);
-// }
-
-// static esp_err_t spi_read(uint8_t reg,
-//                           uint8_t *data,
-//                           uint16_t len,
-//                           void *intf_ptr)
-// {
-//     (void)intf_ptr;
-
-//     // +2: 1 byte addr + 1 byte dummy + len data
-//     uint8_t tx[2 + len];
-//     uint8_t rx[2 + len];
-
-//     tx[0] = reg | 0x80;   // read
-//     tx[1] = 0x00;         // dummy byte (VIGTIG!)
-//     memset(&tx[2], 0, len);
-
-//     spi_transaction_t t = {0};
-//     t.length = (2 + len) * 8;
-//     t.tx_buffer = tx;
-//     t.rx_buffer = rx;
-
-//     esp_err_t err = spi_device_transmit(s_bmi_spi, &t);
-//     if (err != ESP_OK) return err;
-
-//     memcpy(data, &rx[2], len); // data starter efter addr + dummy
-//     return ESP_OK;
-// }
-
-
-// static void spi_delay(uint32_t us, void *intf_ptr)
-// {
-//     esp_rom_delay_us(us);
-// }
-
-// /* =====================================================
-//    SPI SETUP
-// ===================================================== */
-
-// static esp_err_t bmi270_spi_setup(void)
-// {
-//     spi_bus_config_t buscfg = {
-//         .mosi_io_num = PIN_MOSI,
-//         .miso_io_num = PIN_MISO,
-//         .sclk_io_num = PIN_SCLK,
-//         .quadwp_io_num = -1,
-//         .quadhd_io_num = -1,
-//     };
-
-//     spi_device_interface_config_t devcfg = {
-//         .clock_speed_hz = 200 * 1000, //changed temporarily to 200 kHz - before "1 * 1000 * 1000,"
-//         .mode = 0,
-//         .spics_io_num = PIN_CS,
-//         .queue_size = 1,
-
-//         // VIGTIGT: giv CS lidt tid før/efter
-//         .cs_ena_pretrans = 10,
-//         .cs_ena_posttrans = 10,
-
-//     };
-
-//     ESP_ERROR_CHECK(spi_bus_initialize(SPI2_HOST, &buscfg, SPI_DMA_CH_AUTO));
-//     ESP_ERROR_CHECK(spi_bus_add_device(SPI2_HOST, &devcfg, &s_bmi_spi));
-
-//     return ESP_OK;
-// }
-
-// /* =====================================================
-//    IMU INIT
-// ===================================================== */
-
-// void imu_init(void)
-// {
-//     ESP_LOGI(TAG, "Initializing BMI270...");
-
-//     // // 🔴 CRITICAL: Force CS LOW before SPI init
-//     // gpio_set_direction(PIN_CS, GPIO_MODE_OUTPUT);
-//     // gpio_set_level(PIN_CS, 0);
-//     // vTaskDelay(pdMS_TO_TICKS(10));
-//     // gpio_set_level(PIN_CS, 1);
-//     // vTaskDelay(pdMS_TO_TICKS(1));
-
-//     ESP_ERROR_CHECK(bmi270_spi_setup());
-
-//     vTaskDelay(pdMS_TO_TICKS(100));
-
-//     uint8_t id = 0xAA;
-//     esp_err_t e = spi_read(0x00, &id, 1, NULL);
-//     ESP_LOGI(TAG, "RAW read chip_id err=%d id=0x%02X", (int)e, id);
-
-//     s_bmi.read = spi_read;
-//     s_bmi.write = spi_write;
-//     s_bmi.delay_us = spi_delay;
-//     s_bmi.intf_ptr = NULL;
-
-//     esp_err_t err = bmi270_init(&s_bmi);
-
-//     if (err != ESP_OK)
-//     {
-//         ESP_LOGE(TAG, "BMI270 init failed!");
-//         return;
-//     }
-
-//     ESP_LOGI(TAG, "BMI270 initialized successfully!");
-
-//     bmi270_enable_accel(&s_bmi);
-//     bmi270_enable_gyro(&s_bmi);
-// }
-
-// /* =====================================================
-//    TASK
-// ===================================================== */
-
-// void imu_task(void *pvParameters)
-// {
-//     int16_t ax, ay, az;
-//     int16_t gx, gy, gz;
-
-//     while (1)
-//     {
-//         if (bmi270_read_accel(&s_bmi, &ax, &ay, &az) == BMI270_OK &&
-//             bmi270_read_gyro(&s_bmi, &gx, &gy, &gz) == BMI270_OK)
-//         {
-//             ESP_LOGI(TAG,
-//                      "ACC: %d %d %d | GYRO: %d %d %d",
-//                      ax, ay, az,
-//                      gx, gy, gz);
-//         }
-
-//         vTaskDelay(pdMS_TO_TICKS(500));
-//     }
-// }
-
-
-
-
-// /* Kathrines suggestion for imu.c
-// // imu.c: 
-// #include "imu.h"
-// #include "esp_log.h"
-// #include "freertos/task.h"
-// #include "bmi270.h"
-
-// static const char *TAG = "IMU";
-// static bmi270_t s_bmi;
-
-// // =====================================================
-// // IMU INIT
-// // =====================================================
-// void imu_init(void)
-// {
-//     ESP_LOGI(TAG, "IMU init...");
-//     esp_err_t err = bmi270_init(&s_bmi);
-//     if (err != ESP_OK) {
-//         ESP_LOGE(TAG, "BMI270 init failed: %s", esp_err_to_name(err));
-//     }
-// }
-// // =====================================================
-// // TASK
-// // =====================================================
-// void imu_task(void *pvParameters)
-// {
-//     (void)pvParameters;
-//     ESP_LOGI(TAG, "IMU task started");
-
-//     while (1) {
-//         ESP_LOGI(TAG, "IMU running...");
-//         vTaskDelay(pdMS_TO_TICKS(1000));
-//     }
-// }
-// */
+/* =====================================================
+   RINGBUFFER FUNKTIONER
+===================================================== */
+
+void imu_ringbuffer_init(void)
+{
+    imu_rb.write_index = 0;
+    imu_rb.wrapped = 0;
+}
+
+void imu_ringbuffer_push(const imu_sample_t *sample)
+{
+    imu_rb.buffer[imu_rb.write_index] = *sample;
+    imu_rb.write_index++;
+
+    if (imu_rb.write_index >= IMU_BUFFER_SIZE)
+    {
+        imu_rb.write_index = 0;
+        imu_rb.wrapped = 1;
+    }
+}
+
+imu_ringbuffer_t* imu_get_ringbuffer(void)
+{
+    return &imu_rb;
+}
