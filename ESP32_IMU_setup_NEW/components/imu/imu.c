@@ -10,7 +10,21 @@
 
 static const char *TAG = "IMU";
 
-/* ===== SPI PINS ===== */
+/* ================== BIAS VARIABLER ================== */
+
+static float gyro_bias_x = 0;
+static float gyro_bias_y = 0;
+static float gyro_bias_z = 0;
+
+static float acc_bias_x = 0;
+static float acc_bias_y = 0;
+static float acc_bias_z = 0;
+
+/* Forward declaration */
+static void imu_calibrate(void);
+
+/* ================== SPI PINS ================== */
+
 #define PIN_MOSI  35
 #define PIN_MISO  37
 #define PIN_SCLK  36
@@ -20,9 +34,8 @@ static spi_device_handle_t s_spi;
 static struct bmi2_dev s_bmi;
 
 /* =====================================================
-   SPI WRITE (Bosch expected signature)
+   SPI WRITE
 ===================================================== */
-
 static int8_t spi_write(uint8_t reg_addr,
                         const uint8_t *data,
                         uint32_t len,
@@ -31,20 +44,22 @@ static int8_t spi_write(uint8_t reg_addr,
     spi_device_handle_t dev = (spi_device_handle_t)intf_ptr;
 
     uint8_t tx[1 + len];
-    tx[0] = reg_addr & 0x7F;   // Write bit = 0
+    tx[0] = reg_addr & 0x7F;
     memcpy(&tx[1], data, len);
 
     spi_transaction_t t = {0};
     t.length = (1 + len) * 8;
     t.tx_buffer = tx;
 
-    return (spi_device_transmit(dev, &t) == ESP_OK) ? BMI2_OK : BMI2_E_COM_FAIL;
+    if (spi_device_transmit(dev, &t) != ESP_OK)
+        return BMI2_E_COM_FAIL;
+
+    return BMI2_OK;
 }
 
 /* =====================================================
    SPI READ
 ===================================================== */
-
 static int8_t spi_read(uint8_t reg_addr,
                        uint8_t *data,
                        uint32_t len,
@@ -74,7 +89,6 @@ static int8_t spi_read(uint8_t reg_addr,
 /* =====================================================
    DELAY
 ===================================================== */
-
 static void spi_delay(uint32_t period_us, void *intf_ptr)
 {
     (void)intf_ptr;
@@ -82,9 +96,8 @@ static void spi_delay(uint32_t period_us, void *intf_ptr)
 }
 
 /* =====================================================
-   SPI SETUP
+   SPI INIT
 ===================================================== */
-
 static void spi_init_bus(void)
 {
     spi_bus_config_t buscfg = {
@@ -96,7 +109,7 @@ static void spi_init_bus(void)
     };
 
     spi_device_interface_config_t devcfg = {
-        .clock_speed_hz = 1000000, // 1 MHz for init
+        .clock_speed_hz = 1000000,
         .mode = 0,
         .spics_io_num = PIN_CS,
         .queue_size = 1,
@@ -109,7 +122,6 @@ static void spi_init_bus(void)
 /* =====================================================
    IMU INIT
 ===================================================== */
-
 void imu_init(void)
 {
     ESP_LOGI(TAG, "Initializing BMI270...");
@@ -117,61 +129,139 @@ void imu_init(void)
     spi_init_bus();
     vTaskDelay(pdMS_TO_TICKS(100));
 
-    /* Fill Bosch struct */
     s_bmi.read = spi_read;
     s_bmi.write = spi_write;
     s_bmi.delay_us = spi_delay;
     s_bmi.intf = BMI2_SPI_INTF;
     s_bmi.intf_ptr = s_spi;
-    s_bmi.read_write_len = 32;  // recommended
-    s_bmi.config_file_ptr = NULL;
-    s_bmi.intf = BMI2_SPI_INTF;
 
-    int8_t rslt = bmi270_init(&s_bmi);
-
-    if (rslt != BMI2_OK)
+    if (bmi270_init(&s_bmi) != BMI2_OK)
     {
-        ESP_LOGE(TAG, "BMI270 init failed: %d", rslt);
+        ESP_LOGE(TAG, "BMI270 init failed");
         return;
     }
 
     ESP_LOGI(TAG, "BMI270 initialized");
 
-    /* Enable accel + gyro */
-    uint8_t sens_list[2] = { BMI2_ACCEL, BMI2_GYRO };
-    rslt = bmi2_sensor_enable(sens_list, 2, &s_bmi);
+    struct bmi2_sens_config sens_cfg[2];
 
-    if (rslt != BMI2_OK)
-        ESP_LOGE(TAG, "Sensor enable failed");
+    sens_cfg[0].type = BMI2_ACCEL;
+    sens_cfg[1].type = BMI2_GYRO;
+
+    bmi2_get_sensor_config(sens_cfg, 2, &s_bmi);
+
+    sens_cfg[0].cfg.acc.odr = BMI2_ACC_ODR_200HZ;
+    sens_cfg[0].cfg.acc.range = BMI2_ACC_RANGE_2G;
+    sens_cfg[0].cfg.acc.bwp = BMI2_ACC_NORMAL_AVG4;
+    sens_cfg[0].cfg.acc.filter_perf = BMI2_PERF_OPT_MODE;
+
+    sens_cfg[1].cfg.gyr.odr = BMI2_GYR_ODR_200HZ;
+    sens_cfg[1].cfg.gyr.range = BMI2_GYR_RANGE_2000;
+    sens_cfg[1].cfg.gyr.bwp = BMI2_GYR_NORMAL_MODE;
+    sens_cfg[1].cfg.gyr.filter_perf = BMI2_PERF_OPT_MODE;
+
+    bmi2_set_sensor_config(sens_cfg, 2, &s_bmi);
+
+    uint8_t sens_list[2] = { BMI2_ACCEL, BMI2_GYRO };
+    bmi2_sensor_enable(sens_list, 2, &s_bmi);
+
+    ESP_LOGI(TAG, "BMI270 sensors enabled");
+
+    /* Kør kalibrering */
+    imu_calibrate();
+}
+
+/* =====================================================
+   CALIBRATION
+===================================================== */
+static void imu_calibrate(void)
+{
+    struct bmi2_sens_data sensor_data;
+    const int samples = 500;
+
+    float sum_gx = 0, sum_gy = 0, sum_gz = 0;
+    float sum_ax = 0, sum_ay = 0, sum_az = 0;
+
+    ESP_LOGI(TAG, "Calibrating IMU... Keep it still!");
+
+    for (int i = 0; i < samples; i++)
+    {
+        if (bmi2_get_sensor_data(&sensor_data, &s_bmi) == BMI2_OK)
+        {
+            float ax = (sensor_data.acc.x / 16384.0f) * 9.81f;
+            float ay = (sensor_data.acc.y / 16384.0f) * 9.81f;
+            float az = (sensor_data.acc.z / 16384.0f) * 9.81f;
+
+            float gx = sensor_data.gyr.x * (2000.0f / 32768.0f);
+            float gy = sensor_data.gyr.y * (2000.0f / 32768.0f);
+            float gz = sensor_data.gyr.z * (2000.0f / 32768.0f);
+
+            sum_ax += ax;
+            sum_ay += ay;
+            sum_az += az;
+
+            sum_gx += gx;
+            sum_gy += gy;
+            sum_gz += gz;
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(4));
+    }
+
+    acc_bias_x = sum_ax / samples;
+    acc_bias_y = sum_ay / samples;
+    acc_bias_z = (sum_az / samples) - 9.81f;
+
+    gyro_bias_x = sum_gx / samples;
+    gyro_bias_y = sum_gy / samples;
+    gyro_bias_z = sum_gz / samples;
+
+    ESP_LOGI(TAG, "ACC bias: %.3f %.3f %.3f",
+         acc_bias_x,
+         acc_bias_y,
+         acc_bias_z);
+
+    ESP_LOGI(TAG, "GYRO bias: %.3f %.3f %.3f",
+            gyro_bias_x,
+            gyro_bias_y,
+            gyro_bias_z);
+
+    ESP_LOGI(TAG, "Calibration done");
 }
 
 /* =====================================================
    TASK
 ===================================================== */
-
 void imu_task(void *pvParameters)
 {
     struct bmi2_sens_data sensor_data;
 
+    const float scale = 9.81f / 10.37f;   // Gain-korrektion
+
     while (1)
     {
-        int8_t rslt = bmi2_get_sensor_data(&sensor_data, &s_bmi);
-
-        if (rslt == BMI2_OK)
+        if (bmi2_get_sensor_data(&sensor_data, &s_bmi) == BMI2_OK)
         {
+            /* === ACC raw → m/s² → scale → bias removal === */
+            float ax_ms2 = ((sensor_data.acc.x / 16384.0f) * 9.81f) * scale - acc_bias_x;
+            float ay_ms2 = ((sensor_data.acc.y / 16384.0f) * 9.81f) * scale - acc_bias_y;
+            float az_ms2 = ((sensor_data.acc.z / 16384.0f) * 9.81f) * scale - acc_bias_z;
+
+            /* === GYRO raw → deg/s → bias removal === */
+            float gx_dps = (sensor_data.gyr.x * (2000.0f / 32768.0f)) - gyro_bias_x;
+            float gy_dps = (sensor_data.gyr.y * (2000.0f / 32768.0f)) - gyro_bias_y;
+            float gz_dps = (sensor_data.gyr.z * (2000.0f / 32768.0f)) - gyro_bias_z;
+
             ESP_LOGI(TAG,
-                     "ACC: %d %d %d | GYRO: %d %d %d",
-                     sensor_data.acc.x,
-                     sensor_data.acc.y,
-                     sensor_data.acc.z,
-                     sensor_data.gyr.x,
-                     sensor_data.gyr.y,
-                     sensor_data.gyr.z);
+                     "ACC [m/s²]: %.2f %.2f %.2f | GYRO [dps]: %.2f %.2f %.2f",
+                     ax_ms2, ay_ms2, az_ms2,
+                     gx_dps, gy_dps, gz_dps);
         }
 
-        vTaskDelay(pdMS_TO_TICKS(500));
+        vTaskDelay(pdMS_TO_TICKS(4));   // ~250 Hz
     }
 }
+
 
 // #include "imu.h"
 // #include "freertos/FreeRTOS.h"
