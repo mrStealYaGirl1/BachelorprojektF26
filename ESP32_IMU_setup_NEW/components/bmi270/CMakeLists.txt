@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "bmi270.c" "bmi270_config.c"
+    SRCS "bmi2.c" "bmi270.c"
     INCLUDE_DIRS "."
     REQUIRES driver log freertos drivers
 )
