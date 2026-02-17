@@ -1,13 +1,18 @@
 #pragma once
-#include "freertos/FreeRTOS.h"
-
-void imu_init(void);
-void imu_task(void *pvParameters);
-
 #ifndef IMU_H
 #define IMU_H
 
 #include <stdint.h>
+#include "freertos/FreeRTOS.h"
+
+/* =====================================================
+   CONFIGURATION
+===================================================== */
+
+#define IMU_SAMPLE_RATE_HZ      250
+#define IMU_TOTAL_SECONDS       8      // 5 sec pre + 3 sec post
+#define IMU_BUFFER_SIZE  (IMU_SAMPLE_RATE_HZ * IMU_TOTAL_SECONDS)
+
 
 /* =====================================================
    RAW IMU SAMPLE
@@ -28,6 +33,19 @@ typedef struct
 
 } imu_sample_t;
 #pragma pack(pop)
+
+
+/* =====================================================
+   RINGBUFFER
+===================================================== */
+
+typedef struct
+{
+    imu_sample_t buffer[IMU_BUFFER_SIZE];
+    uint16_t write_index;
+    uint8_t wrapped;
+
+} imu_ringbuffer_t;
 
 
 /* =====================================================
@@ -72,46 +90,12 @@ typedef struct
 #pragma pack(pop)
 
 
-
 /* =====================================================
-   IMU PUBLIC FUNCTIONS
+   PUBLIC API
 ===================================================== */
 
 void imu_init(void);
 void imu_task(void *pvParameters);
-
-#endif
-
-#ifndef IMU_TYPES_H
-#define IMU_TYPES_H
-
-#include <stdint.h>
-
-#define IMU_SAMPLE_RATE_HZ      250
-#define IMU_PRETRIGGER_SECONDS  5
-#define IMU_BUFFER_SIZE  (IMU_SAMPLE_RATE_HZ * IMU_PRETRIGGER_SECONDS)
-
-typedef struct
-{
-    int16_t ax;
-    int16_t ay;
-    int16_t az;
-
-    int16_t gx;
-    int16_t gy;
-    int16_t gz;
-
-    uint32_t timestamp_us;
-
-} imu_sample_t;
-
-typedef struct
-{
-    imu_sample_t buffer[IMU_BUFFER_SIZE];
-    uint16_t write_index;
-    uint8_t wrapped;
-
-} imu_ringbuffer_t;
 
 void imu_ringbuffer_init(void);
 void imu_ringbuffer_push(const imu_sample_t *sample);

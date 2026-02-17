@@ -6,9 +6,11 @@
 #include "esp_rom_sys.h"
 #include "esp_timer.h"
 #include <math.h>
+#include <string.h>
 
 #include "bmi2.h"
 #include "bmi270.h"
+#include "swing_manager.h"
 
 static const char *TAG = "IMU";
 
@@ -19,20 +21,20 @@ static const char *TAG = "IMU";
 static imu_ringbuffer_t imu_rb;
 
 /* =====================================================
-   IMPACT DETECTION DEFINES
+   IMPACT DETECTION
 ===================================================== */
 
 #define IMPACT_ENERGY_WINDOW      8
 #define IMPACT_THRESHOLD          20.0f
-#define IMPACT_COOLDOWN_SAMPLES   250   // 1 sekund ved 250 Hz
+#define IMPACT_COOLDOWN_SAMPLES   200   // 1 sekund ved 200 Hz
 
-static float energy_buffer[IMPACT_ENERGY_WINDOW];
+static float energy_buffer[IMPACT_ENERGY_WINDOW] = {0};
 static uint8_t energy_index = 0;
 static float energy_sum = 0;
 static uint32_t cooldown_counter = 0;
 
 /* =====================================================
-   BIAS VARIABLER
+   BIAS
 ===================================================== */
 
 static float gyro_bias_x = 0;
@@ -43,12 +45,11 @@ static float acc_bias_x = 0;
 static float acc_bias_y = 0;
 static float acc_bias_z = 0;
 
-/* Forward declaration */
 static void imu_calibrate(void);
 static uint8_t detect_impact(float acc_dynamic);
 
 /* =====================================================
-   SPI PINS
+   SPI CONFIG
 ===================================================== */
 
 #define PIN_MOSI  35
@@ -62,6 +63,7 @@ static struct bmi2_dev s_bmi;
 /* =====================================================
    SPI WRITE
 ===================================================== */
+
 static int8_t spi_write(uint8_t reg_addr,
                         const uint8_t *data,
                         uint32_t len,
@@ -86,6 +88,7 @@ static int8_t spi_write(uint8_t reg_addr,
 /* =====================================================
    SPI READ
 ===================================================== */
+
 static int8_t spi_read(uint8_t reg_addr,
                        uint8_t *data,
                        uint32_t len,
@@ -112,18 +115,12 @@ static int8_t spi_read(uint8_t reg_addr,
     return BMI2_OK;
 }
 
-/* =====================================================
-   DELAY
-===================================================== */
 static void spi_delay(uint32_t period_us, void *intf_ptr)
 {
     (void)intf_ptr;
     esp_rom_delay_us(period_us);
 }
 
-/* =====================================================
-   SPI INIT
-===================================================== */
 static void spi_init_bus(void)
 {
     spi_bus_config_t buscfg = {
@@ -146,8 +143,9 @@ static void spi_init_bus(void)
 }
 
 /* =====================================================
-   IMU INIT
+   INIT
 ===================================================== */
+
 void imu_init(void)
 {
     ESP_LOGI(TAG, "Initializing BMI270...");
@@ -167,10 +165,7 @@ void imu_init(void)
         return;
     }
 
-    ESP_LOGI(TAG, "BMI270 initialized");
-
     struct bmi2_sens_config sens_cfg[2];
-
     sens_cfg[0].type = BMI2_ACCEL;
     sens_cfg[1].type = BMI2_GYRO;
 
@@ -179,12 +174,8 @@ void imu_init(void)
     sens_cfg[0].cfg.acc.odr = BMI2_ACC_ODR_200HZ;
     sens_cfg[0].cfg.acc.range = BMI2_ACC_RANGE_2G;
     sens_cfg[0].cfg.acc.bwp = BMI2_ACC_NORMAL_AVG4;
-    sens_cfg[0].cfg.acc.filter_perf = BMI2_PERF_OPT_MODE;
-
     sens_cfg[1].cfg.gyr.odr = BMI2_GYR_ODR_200HZ;
     sens_cfg[1].cfg.gyr.range = BMI2_GYR_RANGE_2000;
-    sens_cfg[1].cfg.gyr.bwp = BMI2_GYR_NORMAL_MODE;
-    sens_cfg[1].cfg.gyr.filter_perf = BMI2_PERF_OPT_MODE;
 
     bmi2_set_sensor_config(sens_cfg, 2, &s_bmi);
 
@@ -200,13 +191,14 @@ void imu_init(void)
 /* =====================================================
    CALIBRATION
 ===================================================== */
+
 static void imu_calibrate(void)
 {
     struct bmi2_sens_data sensor_data;
     const int samples = 500;
 
-    float sum_gx = 0, sum_gy = 0, sum_gz = 0;
     float sum_ax = 0, sum_ay = 0, sum_az = 0;
+    float sum_gx = 0, sum_gy = 0, sum_gz = 0;
 
     ESP_LOGI(TAG, "Calibrating IMU... Keep it still!");
 
@@ -231,7 +223,7 @@ static void imu_calibrate(void)
             sum_gz += gz;
         }
 
-        vTaskDelay(pdMS_TO_TICKS(4));
+        vTaskDelay(pdMS_TO_TICKS(5));
     }
 
     acc_bias_x = sum_ax / samples;
@@ -248,6 +240,7 @@ static void imu_calibrate(void)
 /* =====================================================
    IMPACT DETECTION
 ===================================================== */
+
 static uint8_t detect_impact(float acc_dynamic)
 {
     float energy = acc_dynamic * acc_dynamic;
@@ -256,9 +249,7 @@ static uint8_t detect_impact(float acc_dynamic)
     energy_buffer[energy_index] = energy;
     energy_sum += energy;
 
-    energy_index++;
-    if (energy_index >= IMPACT_ENERGY_WINDOW)
-        energy_index = 0;
+    energy_index = (energy_index + 1) % IMPACT_ENERGY_WINDOW;
 
     if (cooldown_counter > 0)
     {
@@ -278,16 +269,16 @@ static uint8_t detect_impact(float acc_dynamic)
 /* =====================================================
    TASK
 ===================================================== */
+
 void imu_task(void *pvParameters)
 {
     struct bmi2_sens_data sensor_data;
-    const float scale = 9.81f / 10.37f;
+    TickType_t last_wake_time = xTaskGetTickCount();
 
     while (1)
     {
         if (bmi2_get_sensor_data(&sensor_data, &s_bmi) == BMI2_OK)
         {
-            /* -------- GEM RÅ SAMPLE -------- */
             imu_sample_t sample;
 
             sample.ax = sensor_data.acc.x;
@@ -300,27 +291,29 @@ void imu_task(void *pvParameters)
 
             imu_ringbuffer_push(&sample);
 
-            /* -------- FLOAT VERSION -------- */
-
-            float ax = ((sensor_data.acc.x / 16384.0f) * 9.81f) * scale - acc_bias_x;
-            float ay = ((sensor_data.acc.y / 16384.0f) * 9.81f) * scale - acc_bias_y;
-            float az = ((sensor_data.acc.z / 16384.0f) * 9.81f) * scale - acc_bias_z;
+            float ax = ((sensor_data.acc.x / 16384.0f) * 9.81f) - acc_bias_x;
+            float ay = ((sensor_data.acc.y / 16384.0f) * 9.81f) - acc_bias_y;
+            float az = ((sensor_data.acc.z / 16384.0f) * 9.81f) - acc_bias_z;
 
             float acc_mag = sqrtf(ax*ax + ay*ay + az*az);
             float acc_dynamic = acc_mag - 9.81f;
 
             if (detect_impact(acc_dynamic))
             {
-                ESP_LOGI(TAG, "🔥 IMPACT DETECTED 🔥");
+                uint32_t idx = (imu_rb.write_index == 0)
+                               ? (IMU_BUFFER_SIZE - 1)
+                               : (imu_rb.write_index - 1);
+
+                swing_manager_notify_impact(idx);
             }
         }
 
-        vTaskDelay(pdMS_TO_TICKS(4));
+        vTaskDelayUntil(&last_wake_time, pdMS_TO_TICKS(5)); // 200 Hz
     }
 }
 
 /* =====================================================
-   RINGBUFFER FUNKTIONER
+   RINGBUFFER IMPLEMENTATION
 ===================================================== */
 
 void imu_ringbuffer_init(void)
@@ -332,6 +325,7 @@ void imu_ringbuffer_init(void)
 void imu_ringbuffer_push(const imu_sample_t *sample)
 {
     imu_rb.buffer[imu_rb.write_index] = *sample;
+
     imu_rb.write_index++;
 
     if (imu_rb.write_index >= IMU_BUFFER_SIZE)
