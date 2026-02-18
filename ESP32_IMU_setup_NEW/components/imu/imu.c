@@ -25,7 +25,7 @@ static imu_ringbuffer_t imu_rb;
 ===================================================== */
 
 #define IMPACT_ENERGY_WINDOW      8
-#define IMPACT_THRESHOLD          20.0f
+#define IMPACT_THRESHOLD          1000.0f
 #define IMPACT_COOLDOWN_SAMPLES   200   // 1 sekund ved 200 Hz
 
 static float energy_buffer[IMPACT_ENERGY_WINDOW] = {0};
@@ -312,8 +312,13 @@ void imu_task(void *pvParameters)
             float ay = ((sensor_data.acc.y / 16384.0f) * 9.81f) - acc_bias_y;
             float az = ((sensor_data.acc.z / 16384.0f) * 9.81f) - acc_bias_z;
 
-            float acc_mag = sqrtf(ax*ax + ay*ay + az*az);
-            float acc_dynamic = acc_mag - 9.81f;
+            // float acc_mag = sqrtf(ax*ax + ay*ay + az*az);
+            // float acc_dynamic = acc_mag - 9.81f;
+
+            float mag2 = ax*ax + ay*ay + az*az;   // (m/s²)² - undgår sqrtf(), som er tung, giver ekstra "støj" i tal pga. rounding.
+            float g2   = 9.81f*9.81f;
+            float acc_dynamic = fabs(mag2 - g2);   // mindre følsom for små variationer ( mindre risiko for falske impacts ved aggresive swings)
+
 
             if (detect_impact(acc_dynamic))
             {
