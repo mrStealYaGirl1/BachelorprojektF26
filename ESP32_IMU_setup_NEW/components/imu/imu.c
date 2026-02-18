@@ -241,6 +241,9 @@ static void imu_calibrate(void)
    IMPACT DETECTION
 ===================================================== */
 
+static float energy_sum_peak = 0.0f;
+static uint32_t peak_print_counter = 0;
+
 static uint8_t detect_impact(float acc_dynamic)
 {
     float energy = acc_dynamic * acc_dynamic;
@@ -249,7 +252,20 @@ static uint8_t detect_impact(float acc_dynamic)
     energy_buffer[energy_index] = energy;
     energy_sum += energy;
 
+    if (energy_sum > energy_sum_peak) energy_sum_peak = energy_sum;
+
+    peak_print_counter++;
+    if (peak_print_counter >= 200) { // ca 1 sekund ved 200 Hz
+        ESP_LOGI("IMPACT_DEBUG", "energy_sum=%.2f  peak_1s=%.2f", energy_sum, energy_sum_peak);
+        energy_sum_peak = 0.0f;
+        peak_print_counter = 0;
+    }
+
+
+
     energy_index = (energy_index + 1) % IMPACT_ENERGY_WINDOW;
+
+    //ESP_LOGI("IMPACT_DEBUG", "energy_sum=%.2f", energy_sum);
 
     if (cooldown_counter > 0)
     {
@@ -259,6 +275,7 @@ static uint8_t detect_impact(float acc_dynamic)
 
     if (energy_sum > IMPACT_THRESHOLD)
     {
+        ESP_LOGW("IMPACT_DEBUG", "IMPACT! energy_sum=%.2f", energy_sum);
         cooldown_counter = IMPACT_COOLDOWN_SAMPLES;
         return 1;
     }
