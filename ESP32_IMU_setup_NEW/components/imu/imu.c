@@ -33,6 +33,13 @@ static uint8_t energy_index = 0;
 static float energy_sum = 0;
 static uint32_t cooldown_counter = 0;
 
+//gyro gate
+#define GYRO_GATE_THRESHOLD_DPS   250.0f   // startværdi, skal tunes
+static float last_gyro_mag_dps = 0.0f;
+//spike detection
+#define IMPACT_RISE_THRESHOLD  27.0f   // startværdi, tune via log
+static float prev_energy_sum = 0.0f;
+
 /* =====================================================
    BIAS
 ===================================================== */
@@ -243,6 +250,7 @@ static void imu_calibrate(void)
 
 static float energy_sum_peak = 0.0f;
 static uint32_t peak_print_counter = 0;
+static float gyro_peak_1s = 0.0f;
 
 static uint8_t detect_impact(float acc_dynamic)
 {
@@ -252,12 +260,22 @@ static uint8_t detect_impact(float acc_dynamic)
     energy_buffer[energy_index] = energy;
     energy_sum += energy;
 
+    float dE = energy_sum - prev_energy_sum;    // delta Energy for spike detection - ændring i energi fra én sample til den næste. (ryk => dE moderat (energi bygger op over flere samples), slag => dE stor (energi ændrer sig meget på kort tid))
+    prev_energy_sum = energy_sum;
+
+
     if (energy_sum > energy_sum_peak) energy_sum_peak = energy_sum;
+    //if (last_gyro_mag_dps > gyro_peak_1s) gyro_peak_1s = last_gyro_mag_dps;
+
 
     peak_print_counter++;
     if (peak_print_counter >= 200) { // ca 1 sekund ved 200 Hz
         ESP_LOGI("IMPACT_DEBUG", "energy_sum=%.2f  peak_1s=%.2f", energy_sum, energy_sum_peak);
         energy_sum_peak = 0.0f;
+
+        //ESP_LOGI("IMPACT_DEBUG", "E=%.2f peakE=%.2f  gyro=%.1f peakG=%.1f", energy_sum, energy_sum_peak, last_gyro_mag_dps, gyro_peak_1s);
+        //gyro_peak_1s = 0.0f;
+
         peak_print_counter = 0;
     }
 
@@ -273,12 +291,33 @@ static uint8_t detect_impact(float acc_dynamic)
         return 0;
     }
 
-    if (energy_sum > IMPACT_THRESHOLD)
+    // if (energy_sum > IMPACT_THRESHOLD)
+    // {
+    //     ESP_LOGW("IMPACT_DEBUG", "IMPACT! energy_sum=%.2f", energy_sum);
+    //     cooldown_counter = IMPACT_COOLDOWN_SAMPLES;
+    //     return 1;
+    // }
+
+    // if (energy_sum > IMPACT_THRESHOLD && last_gyro_mag_dps > GYRO_GATE_THRESHOLD_DPS)
+    // {
+    //     ESP_LOGW("IMPACT_DEBUG", "IMPACT! E=%.2f gyro=%.1f dps", energy_sum, last_gyro_mag_dps);
+    //     cooldown_counter = IMPACT_COOLDOWN_SAMPLES;
+    //     return 1;
+    // }
+    if (energy_sum > IMPACT_THRESHOLD && dE > IMPACT_RISE_THRESHOLD)
+{
+    ESP_LOGW("IMPACT_DEBUG", "IMPACT! E=%.2f dE=%.2f", energy_sum, dE);
+    cooldown_counter = IMPACT_COOLDOWN_SAMPLES;
+    return 1;
+}
+
+
+    // log why it does not trigger impact
+    if (energy_sum > IMPACT_THRESHOLD && dE <= IMPACT_RISE_THRESHOLD)
     {
-        ESP_LOGW("IMPACT_DEBUG", "IMPACT! energy_sum=%.2f", energy_sum);
-        cooldown_counter = IMPACT_COOLDOWN_SAMPLES;
-        return 1;
+        ESP_LOGI("IMPACT_DEBUG", "Blocked by rise threshold: E=%.2f dE=%.2f", energy_sum, dE);
     }
+
 
     return 0;
 }
@@ -314,6 +353,15 @@ void imu_task(void *pvParameters)
 
             float acc_mag = sqrtf(ax*ax + ay*ay + az*az);
             float acc_dynamic = acc_mag - 9.81f;
+
+            // Gyro raw -> dps (range = 2000 dps)
+            float gx_dps = (sensor_data.gyr.x * (2000.0f / 32768.0f)) - gyro_bias_x;
+            float gy_dps = (sensor_data.gyr.y * (2000.0f / 32768.0f)) - gyro_bias_y;
+            float gz_dps = (sensor_data.gyr.z * (2000.0f / 32768.0f)) - gyro_bias_z;
+
+            last_gyro_mag_dps = sqrtf(gx_dps*gx_dps + gy_dps*gy_dps + gz_dps*gz_dps);
+
+
 
             if (detect_impact(acc_dynamic))
             {
