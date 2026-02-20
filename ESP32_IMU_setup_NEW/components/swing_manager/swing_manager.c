@@ -3,6 +3,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
+#include "ble_manager.h"
 
 static const char *TAG = "SWING";
 
@@ -95,6 +96,9 @@ void swing_manager_task(void *pvParameters)
                 }
 
                 ESP_LOGI(TAG, "Max raw acc energy: %.2f", max_acc);
+
+                // 👇 HER kalder du BLE burst
+                ble_manager_send_burst(max_acc, 0.0f, 2000);
 
                 int64_t t0 = swing_buffer[0].timestamp_us;
                 int64_t tImpact = swing_buffer[PRE_SAMPLES].timestamp_us;

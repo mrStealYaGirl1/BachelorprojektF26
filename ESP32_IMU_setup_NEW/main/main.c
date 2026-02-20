@@ -5,12 +5,16 @@
 
 #include "imu.h"
 #include "swing_manager.h"
+#include "ble_manager.h"
 
 static const char *TAG = "MAIN";
 
 void app_main(void)
 {
     ESP_LOGI(TAG, "ESP32-FW starter");
+
+    // Initialiser NimBLE
+    ble_manager_init();
 
     imu_init();
 
