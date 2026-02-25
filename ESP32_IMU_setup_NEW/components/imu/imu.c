@@ -250,7 +250,7 @@ static void imu_calibrate(void)
 
 static float energy_sum_peak = 0.0f;
 static uint32_t peak_print_counter = 0;
-static float gyro_peak_1s = 0.0f;
+//static float gyro_peak_1s = 0.0f;
 
 static uint8_t detect_impact(float acc_dynamic)
 {
