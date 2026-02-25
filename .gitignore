@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+
+# Builds
+dist/
+build/
+out/
+
+# Env / secrets
+.env
+.env.*   # fx .env.local, .env.production
+
+# Logs
+*.log
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# Coverage
+coverage/
