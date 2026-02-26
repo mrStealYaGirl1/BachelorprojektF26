@@ -17,7 +17,7 @@ static void ble_test_task(void *arg)
 
     while (1) {
         ESP_LOGI(TAG, "Triggering BLE burst...");
-        ble_manager_send_burst(12.34f, 0.56f, 3000); // 3 sek (nemt at fange)
+        ble_manager_send_burst(12.34f, 0.56f, 200); // 3 sek (nemt at fange)
         vTaskDelay(pdMS_TO_TICKS(5000));
     }
 }

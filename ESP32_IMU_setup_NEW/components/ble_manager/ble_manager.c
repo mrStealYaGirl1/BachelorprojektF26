@@ -332,3 +332,7 @@ void ble_manager_send_burst(float peak, float tempo, uint32_t duration_ms)
 // }
 
 
+
+
+
+
