@@ -11,6 +11,7 @@
 #include "bmi2.h"
 #include "bmi270.h"
 #include "swing_manager.h"
+#include "ble_manager.h"
 
 static const char *TAG = "IMU";
 
@@ -331,6 +332,9 @@ void imu_task(void *pvParameters)
     struct bmi2_sens_data sensor_data;
     TickType_t last_wake_time = xTaskGetTickCount();
 
+    uint32_t counter = 0;
+    TickType_t last_send = xTaskGetTickCount();
+
     while (1)
     {
         if (bmi2_get_sensor_data(&sensor_data, &s_bmi) == BMI2_OK)
@@ -362,6 +366,15 @@ void imu_task(void *pvParameters)
             last_gyro_mag_dps = sqrtf(gx_dps*gx_dps + gy_dps*gy_dps + gz_dps*gz_dps);
 
 
+            // Send simpel BLE msg hver 1 sekund
+            if ((xTaskGetTickCount() - last_send) >= pdMS_TO_TICKS(1000)) {
+                last_send = xTaskGetTickCount();
+
+                uint32_t ts_ms = (uint32_t)(esp_timer_get_time() / 1000ULL);
+                //ble_manager_send_simple(counter++, ts_ms);
+                ble_manager_notify_simple(counter++, ts_ms);
+            }
+            
 
             if (detect_impact(acc_dynamic))
             {

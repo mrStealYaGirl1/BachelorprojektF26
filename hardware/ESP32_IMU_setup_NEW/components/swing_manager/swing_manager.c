@@ -98,7 +98,9 @@ void swing_manager_task(void *pvParameters)
                 ESP_LOGI(TAG, "Max raw acc energy: %.2f", max_acc);
 
                 // 👇 HER kalder du BLE burst
-                ble_manager_send_burst(max_acc, 0.0f, 2000);
+                //ble_manager_send_burst(max_acc, 0.0f, 2000);
+                uint32_t ts_ms = (uint32_t)(swing_buffer[PRE_SAMPLES].timestamp_us / 1000ULL);
+                ble_manager_send_simple((uint32_t)max_acc, ts_ms);
 
                 int64_t t0 = swing_buffer[0].timestamp_us;
                 int64_t tImpact = swing_buffer[PRE_SAMPLES].timestamp_us;
