@@ -339,7 +339,7 @@ void ble_manager_start_imu_tx_task(void)
 {
     if (s_imu_q) return;
 
-    s_imu_q = xQueueCreate(16, sizeof(ble_imu_pkt_t));
+    s_imu_q = xQueueCreate(64, sizeof(ble_imu_pkt_t));
     configASSERT(s_imu_q);
 
     xTaskCreate(ble_imu_tx_task, "ble_imu_tx", 4096, NULL, 6, &s_imu_tx_task);
@@ -348,5 +348,6 @@ void ble_manager_start_imu_tx_task(void)
 bool ble_manager_send_imu(const ble_imu_pkt_t *pkt)
 {
     if (!s_imu_q) return false;
-    return (xQueueSend(s_imu_q, pkt, 0) == pdTRUE);
+    //return (xQueueSend(s_imu_q, pkt, 0) == pdTRUE);
+    return (xQueueSend(s_imu_q, pkt, pdMS_TO_TICKS(50)) == pdTRUE); // lidt timeout for at undgå at blokere hvis queue er fuld (kan ske hvis BLE ikke kan følge med)
 }

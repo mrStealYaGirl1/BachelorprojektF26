@@ -97,11 +97,6 @@ void swing_manager_task(void *pvParameters)
 
                 ESP_LOGI(TAG, "Max raw acc energy: %.2f", max_acc);
 
-                // 👇 HER kalder du BLE burst
-                //ble_manager_send_burst(max_acc, 0.0f, 2000);
-                uint32_t ts_ms = (uint32_t)(swing_buffer[PRE_SAMPLES].timestamp_us / 1000ULL);
-                ble_manager_send_simple((uint32_t)max_acc, ts_ms);
-
                 int64_t t0 = swing_buffer[0].timestamp_us;
                 int64_t tImpact = swing_buffer[PRE_SAMPLES].timestamp_us;
                 int64_t tEnd = swing_buffer[EVENT_SIZE-1].timestamp_us;
@@ -109,6 +104,38 @@ void swing_manager_task(void *pvParameters)
                 ESP_LOGI(TAG, "Pre duration:  %.3f sec", (tImpact - t0) / 1000000.0);
                 ESP_LOGI(TAG, "Post duration: %.3f sec", (tEnd - tImpact) / 1000000.0);
                 ESP_LOGI(TAG, "Total duration: %.3f sec", (tEnd - t0) / 1000000.0);
+
+
+
+                // send hele event-bufferen via BLE som en serie notifies
+                static uint16_t s_event_id = 0;
+                const uint16_t event_id = ++s_event_id;
+
+                const uint32_t DECIM = 1;                 // Decim = 4 (200/4 = 50 Hz) - så sendes kun hver 4. sample
+                uint16_t seq = 0;
+
+                for (uint32_t i = 0; i < EVENT_SIZE; i += DECIM) {
+                    ble_imu_pkt_t pkt = {
+                        .ax = swing_buffer[i].ax,
+                        .ay = swing_buffer[i].ay,
+                        .az = swing_buffer[i].az,
+                        .gx = swing_buffer[i].gx,
+                        .gy = swing_buffer[i].gy,
+                        .gz = swing_buffer[i].gz,
+                        .ts_ms = (uint32_t)(swing_buffer[i].timestamp_us / 1000ULL),
+                        .seq = seq++,
+                        .event_id = event_id,
+                    };
+
+                    // ✅ send via queue (så BLE ligger i egen task)
+                    // brug evt. lille delay hvis I oplever “overrun”
+                    (void)ble_manager_send_imu(&pkt);
+
+                    // lille pacing (valgfrit men ofte nødvendigt)
+                    // vTaskDelay(pdMS_TO_TICKS(1));
+                }
+
+
 
                 cooldown_counter = 0;
                 state = STATE_COOLDOWN;

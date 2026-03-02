@@ -6,6 +6,8 @@ typedef struct __attribute__((packed)) {
     int16_t ax, ay, az;
     int16_t gx, gy, gz;
     uint32_t ts_ms;
+    uint16_t seq;       // 0..N-1 inden for slaget
+    uint16_t event_id;  // tæller slag
 } ble_imu_pkt_t;
 
 void ble_manager_init(void);

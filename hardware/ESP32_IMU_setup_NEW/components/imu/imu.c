@@ -386,14 +386,14 @@ void imu_task(void *pvParameters)
                 .ts_ms = (uint32_t)(sample.timestamp_us / 1000ULL),
             };
 
-            // Send "seneste sample" hver 5 sekund for at have noget data i appen, selvom der ikke er nogen impact
-            static uint32_t last_send_ms = 0;
-            uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000ULL);
+            // // Send "seneste sample" hver 5 sekund for at have noget data i appen, selvom der ikke er nogen impact
+            // static uint32_t last_send_ms = 0;
+            // uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000ULL);
 
-            if ((now_ms - last_send_ms) >= 5000) {   // 5 sek
-                last_send_ms = now_ms;
-                ble_manager_send_imu(&pkt);
-            }
+            // if ((now_ms - last_send_ms) >= 5000) {   // 5 sek
+            //     last_send_ms = now_ms;
+            //     ble_manager_send_imu(&pkt);
+            // }
 
             if (detect_impact(acc_dynamic))
             {
