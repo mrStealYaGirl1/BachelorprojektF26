@@ -12,6 +12,10 @@ static const char *TAG = "SWING";
 #define POST_SAMPLES   600    // 3 sek
 #define EVENT_SIZE     (PRE_SAMPLES + POST_SAMPLES)
 
+/* Scaling factors for binary transport */
+#define ACC_SCALE   1000.0f   // 0.001g resolution
+#define GYRO_SCALE  100.0f    // 0.01 dps resolution
+
 typedef enum {
     STATE_WAIT,
     STATE_CAPTURE_POST,
@@ -28,6 +32,25 @@ static uint32_t post_counter = 0;
 static uint32_t cooldown_counter = 0;
 static uint8_t impact_pending = 0;
 
+/* -------- Binary BLE transport struct -------- */
+typedef struct __attribute__((packed)) {
+    int16_t ax;
+    int16_t ay;
+    int16_t az;
+    int16_t gx;
+    int16_t gy;
+    int16_t gz;
+    uint32_t timestamp_us;
+} ble_sample_t;
+
+/* -------- Header struct -------- */
+typedef struct __attribute__((packed)) {
+    uint16_t total_samples;
+    uint16_t sample_size;
+} ble_header_t;
+
+
+/* Called from IMU when impact is detected */
 void swing_manager_notify_impact(uint32_t index)
 {
     if (state == STATE_WAIT)
@@ -82,31 +105,43 @@ void swing_manager_task(void *pvParameters)
             {
                 ESP_LOGI(TAG, "Processing swing event");
 
-                float max_acc = 0;
+                /* Allocate transport buffer */
+                static ble_sample_t tx_buffer[EVENT_SIZE];
+
+                int64_t t0 = swing_buffer[0].timestamp_us;
 
                 for (uint32_t i = 0; i < EVENT_SIZE; i++)
                 {
-                    float ax = swing_buffer[i].ax;
-                    float ay = swing_buffer[i].ay;
-                    float az = swing_buffer[i].az;
+                    /* Scale float -> int16 */
+                    tx_buffer[i].ax = (int16_t)(swing_buffer[i].ax * ACC_SCALE);
+                    tx_buffer[i].ay = (int16_t)(swing_buffer[i].ay * ACC_SCALE);
+                    tx_buffer[i].az = (int16_t)(swing_buffer[i].az * ACC_SCALE);
 
-                    float mag = ax*ax + ay*ay + az*az;
-                    if (mag > max_acc)
-                        max_acc = mag;
+                    tx_buffer[i].gx = (int16_t)(swing_buffer[i].gx * GYRO_SCALE);
+                    tx_buffer[i].gy = (int16_t)(swing_buffer[i].gy * GYRO_SCALE);
+                    tx_buffer[i].gz = (int16_t)(swing_buffer[i].gz * GYRO_SCALE);
+
+                    /* Normalize timestamp to event start */
+                    tx_buffer[i].timestamp_us =
+                        (uint32_t)(swing_buffer[i].timestamp_us - t0);
                 }
 
-                ESP_LOGI(TAG, "Max raw acc energy: %.2f", max_acc);
+                /* Prepare header */
+                ble_header_t header;
+                header.total_samples = EVENT_SIZE;
+                header.sample_size   = sizeof(ble_sample_t);
 
-                // 👇 HER kalder du BLE burst
-                ble_manager_send_burst(max_acc, 0.0f, 2000);
+                ESP_LOGI(TAG, "Sending swing event: %u samples (%u bytes each)",
+                         header.total_samples, header.sample_size);
 
-                int64_t t0 = swing_buffer[0].timestamp_us;
-                int64_t tImpact = swing_buffer[PRE_SAMPLES].timestamp_us;
-                int64_t tEnd = swing_buffer[EVENT_SIZE-1].timestamp_us;
+                /* Send header first */
+                ble_manager_send((uint8_t*)&header, sizeof(header));
 
-                ESP_LOGI(TAG, "Pre duration:  %.3f sec", (tImpact - t0) / 1000000.0);
-                ESP_LOGI(TAG, "Post duration: %.3f sec", (tEnd - tImpact) / 1000000.0);
-                ESP_LOGI(TAG, "Total duration: %.3f sec", (tEnd - t0) / 1000000.0);
+                /* Send binary sample data */
+                ble_manager_send((uint8_t*)tx_buffer,
+                                 sizeof(ble_sample_t) * EVENT_SIZE);
+
+                ESP_LOGI(TAG, "Swing event sent over BLE");
 
                 cooldown_counter = 0;
                 state = STATE_COOLDOWN;
@@ -115,13 +150,13 @@ void swing_manager_task(void *pvParameters)
 
             case STATE_COOLDOWN:
                 cooldown_counter++;
-                if (cooldown_counter >= 200) // 1 sekund
+                if (cooldown_counter >= 200) // 1 second cooldown
                 {
                     state = STATE_WAIT;
                 }
                 break;
         }
 
-        vTaskDelayUntil(&last_wake_time, pdMS_TO_TICKS(5)); // 200 Hz --- FreeRTOS changed to 1000 Hz (100 Hz before)
+        vTaskDelayUntil(&last_wake_time, pdMS_TO_TICKS(5)); // 200 Hz
     }
 }
