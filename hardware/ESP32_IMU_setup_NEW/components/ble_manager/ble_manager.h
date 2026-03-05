@@ -2,12 +2,23 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-typedef struct __attribute__((packed)) {
-    int16_t ax, ay, az;
-    int16_t gx, gy, gz;
-    uint32_t ts_ms;
-    uint16_t seq;       // 0..N-1 inden for slaget
-    uint16_t event_id;  // tæller slag
+#define SAMPLES_PER_PACKET 10
+
+typedef struct
+{
+    float ax[SAMPLES_PER_PACKET];
+    float ay[SAMPLES_PER_PACKET];
+    float az[SAMPLES_PER_PACKET];
+
+    float gx[SAMPLES_PER_PACKET];
+    float gy[SAMPLES_PER_PACKET];
+    float gz[SAMPLES_PER_PACKET];
+
+    uint32_t ts_ms[SAMPLES_PER_PACKET];
+
+    uint16_t seq;
+    uint16_t event_id;
+
 } ble_imu_pkt_t;
 
 void ble_manager_init(void);

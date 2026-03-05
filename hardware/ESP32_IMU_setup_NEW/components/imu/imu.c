@@ -376,15 +376,15 @@ void imu_task(void *pvParameters)
             // }
             
             // Send IMU data via BLE (enten direkte eller via queue)
-            ble_imu_pkt_t pkt = {
-                .ax = sample.ax,
-                .ay = sample.ay,
-                .az = sample.az,
-                .gx = sample.gx,
-                .gy = sample.gy,
-                .gz = sample.gz,
-                .ts_ms = (uint32_t)(sample.timestamp_us / 1000ULL),
-            };
+            // ble_imu_pkt_t pkt = {
+            //     .ax = sample.ax,
+            //     .ay = sample.ay,
+            //     .az = sample.az,
+            //     .gx = sample.gx,
+            //     .gy = sample.gy,
+            //     .gz = sample.gz,
+            //     .ts_ms = (uint32_t)(sample.timestamp_us / 1000ULL),
+            // };
 
             // // Send "seneste sample" hver 5 sekund for at have noget data i appen, selvom der ikke er nogen impact
             // static uint32_t last_send_ms = 0;
