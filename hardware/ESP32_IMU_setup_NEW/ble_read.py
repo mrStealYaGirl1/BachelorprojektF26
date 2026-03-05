@@ -1,12 +1,19 @@
 import asyncio
 import struct
+import math
 from bleak import BleakClient, BleakScanner
 
 DEVICE_NAME = "GOLF_IMU"
-
 CHAR_UUID = "99887766-5544-3322-1100-ffeeddccbbaa"
 
 SAMPLE_SIZE = 20
+
+# swing state
+samples = []
+max_accel = 0
+max_gyro = 0
+swing_start_time = None
+impact_time = None
 
 
 def decode_packet(data):
@@ -29,6 +36,73 @@ def decode_packet(data):
             f"T:{ts_ms} "
             f"EV:{event_id}"
         )
+
+        process_sample(ax, ay, az, gx, gy, gz, ts_ms)
+
+
+def process_sample(ax, ay, az, gx, gy, gz, timestamp):
+
+    global max_accel, max_gyro
+    global swing_start_time, impact_time
+    global samples
+
+    accel = math.sqrt(ax*ax + ay*ay + az*az)
+    gyro  = math.sqrt(gx*gx + gy*gy + gz*gz)
+
+    samples.append((timestamp, accel, gyro))
+
+    if accel > max_accel:
+        max_accel = accel
+
+    if gyro > max_gyro:
+        max_gyro = gyro
+
+    # detect swing start
+    if swing_start_time is None and gyro > 300:
+        swing_start_time = timestamp
+
+    # detect impact
+    if swing_start_time and accel > 8000 and impact_time is None:
+        impact_time = timestamp
+        calculate_metrics()
+
+
+def calculate_metrics():
+
+    global max_accel, max_gyro
+    global swing_start_time, impact_time
+
+    swing_duration = impact_time - swing_start_time
+
+    downswing_time = swing_duration * 0.3
+    backswing_time = swing_duration * 0.7
+
+    tempo = backswing_time / downswing_time
+
+    print("\n============================")
+    print("SWING DETECTED")
+    print("============================")
+    print(f"Max acceleration: {max_accel/2048:.2f} g")
+    print(f"Max gyro speed:   {max_gyro:.2f} deg/s")
+    print(f"Swing duration:   {swing_duration/1000:.2f} ms")
+    print(f"Impact time:      {(impact_time - swing_start_time)/1000:.2f} ms")
+    print(f"Tempo:            {tempo:.2f}")
+    print("============================\n")
+
+    reset_swing()
+
+
+def reset_swing():
+
+    global samples
+    global max_accel, max_gyro
+    global swing_start_time, impact_time
+
+    samples = []
+    max_accel = 0
+    max_gyro = 0
+    swing_start_time = None
+    impact_time = None
 
 
 def notification_handler(sender, data):
