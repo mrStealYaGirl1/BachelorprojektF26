@@ -16,6 +16,11 @@ static const char *TAG = "SWING";
 #define ACC_SCALE   1000.0f   // 0.001g resolution
 #define GYRO_SCALE  100.0f    // 0.01 dps resolution
 
+/* DEBUG MODE
+   1 = send readable text over BLE
+   0 = send binary struct (normal mode) */
+#define BLE_DEBUG_TEXT 1
+
 typedef enum {
     STATE_WAIT,
     STATE_CAPTURE_POST,
@@ -137,9 +142,36 @@ void swing_manager_task(void *pvParameters)
                 /* Send header first */
                 ble_manager_send((uint8_t*)&header, sizeof(header));
 
+#if BLE_DEBUG_TEXT
+
+                ESP_LOGI(TAG, "Sending swing event as TEXT (debug)");
+
+                for (uint32_t i = 0; i < EVENT_SIZE; i++)
+                {
+                    char msg[120];
+
+                    sprintf(msg,
+                            "AX=%.2f AY=%.2f AZ=%.2f GX=%.2f GY=%.2f GZ=%.2f T=%u\n",
+                            swing_buffer[i].ax,
+                            swing_buffer[i].ay,
+                            swing_buffer[i].az,
+                            swing_buffer[i].gx,
+                            swing_buffer[i].gy,
+                            swing_buffer[i].gz,
+                            (uint32_t)(swing_buffer[i].timestamp_us - t0));
+
+                    ble_manager_send((uint8_t*)msg, strlen(msg));
+                }
+
+#else
+
+                ESP_LOGI(TAG, "Sending swing event as BINARY");
+
                 /* Send binary sample data */
                 ble_manager_send((uint8_t*)tx_buffer,
                                  sizeof(ble_sample_t) * EVENT_SIZE);
+
+#endif
 
                 ESP_LOGI(TAG, "Swing event sent over BLE");
 
