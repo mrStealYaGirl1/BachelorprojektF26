@@ -2,25 +2,17 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define SAMPLES_PER_PACKET 10
-
 typedef struct
 {
-    float ax;
-    float ay;
-    float az;
+    int16_t ax;
+    int16_t ay;
+    int16_t az;
 
-    float gx;
-    float gy;
-    float gz;
+    int16_t gx;
+    int16_t gy;
+    int16_t gz;
 
     uint32_t ts_ms;
-
-} imu_sample_pkt_t;
-
-typedef struct
-{
-    imu_sample_pkt_t sample[SAMPLES_PER_PACKET];
 
     uint16_t seq;
     uint16_t event_id;

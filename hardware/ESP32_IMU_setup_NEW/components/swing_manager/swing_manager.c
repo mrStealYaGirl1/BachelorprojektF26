@@ -4,6 +4,7 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "ble_manager.h"
+#include "esp_timer.h"
 
 static const char *TAG = "SWING";
 
@@ -128,38 +129,50 @@ void swing_manager_task(void *pvParameters)
 
                 uint16_t seq = 0;
 
-                for (uint32_t i = 0; i < EVENT_SIZE; i += SAMPLES_PER_PACKET)
+                int64_t ble_start_us = esp_timer_get_time();
+                uint32_t packets_sent = 0;
+
+                for (uint32_t i = 0; i < EVENT_SIZE; i++)
                 {
-                    ble_imu_pkt_t pkt = {0};
+                    ble_imu_pkt_t pkt;
 
-                    pkt.event_id = event_id;
+                    pkt.ax = (int16_t)(swing_buffer[i].ax * 1000);
+                    pkt.ay = (int16_t)(swing_buffer[i].ay * 1000);
+                    pkt.az = (int16_t)(swing_buffer[i].az * 1000);
+
+                    pkt.gx = (int16_t)(swing_buffer[i].gx * 100);
+                    pkt.gy = (int16_t)(swing_buffer[i].gy * 100);
+                    pkt.gz = (int16_t)(swing_buffer[i].gz * 100);
+
+                    pkt.ts_ms = (uint32_t)(swing_buffer[i].timestamp_us / 1000ULL);
+
                     pkt.seq = seq++;
-
-                    for (uint32_t j = 0; j < SAMPLES_PER_PACKET; j++)
-                    {
-                        if ((i + j) >= EVENT_SIZE)
-                            break;
-
-                        pkt.sample[j].ax = swing_buffer[i+j].ax;
-                        pkt.sample[j].ay = swing_buffer[i+j].ay;
-                        pkt.sample[j].az = swing_buffer[i+j].az;
-
-                        pkt.sample[j].gx = swing_buffer[i+j].gx;
-                        pkt.sample[j].gy = swing_buffer[i+j].gy;
-                        pkt.sample[j].gz = swing_buffer[i+j].gz;
-
-                        pkt.sample[j].ts_ms =
-                            (uint32_t)(swing_buffer[i+j].timestamp_us / 1000ULL);
-                    }
+                    pkt.event_id = event_id;
 
                     /* send via BLE manager queue */
                     (void)ble_manager_send_imu(&pkt);
 
-                    /* pacing (meget vigtigt for BLE stabilitet) */
-                    vTaskDelay(pdMS_TO_TICKS(2));
+                    packets_sent++;
+
+                    /* pacing for BLE stability */
+                    vTaskDelay(pdMS_TO_TICKS(1));   // change to 2 ms if experiencing BLE congestion
                 }
 
-                ESP_LOGI(TAG, "Swing event sent over BLE");
+                //ESP_LOGI(TAG, "Swing event sent over BLE");
+                int64_t ble_end_us = esp_timer_get_time();
+
+                float ble_time_sec = (ble_end_us - ble_start_us) / 1000000.0f;
+                float packets_per_sec = packets_sent / ble_time_sec;
+                float data_rate_kB = (packets_sent * sizeof(ble_imu_pkt_t)) / 1024.0f / ble_time_sec;
+
+                ESP_LOGI(TAG, "BLE transfer finished");
+                ESP_LOGI(TAG, "Packets sent: %lu", packets_sent);
+                ESP_LOGI(TAG, "Transfer time: %.3f sec", ble_time_sec);
+                ESP_LOGI(TAG, "Packets/sec: %.1f", packets_per_sec);
+                ESP_LOGI(TAG, "Throughput: %.2f kB/s", data_rate_kB);
+
+                ESP_LOGI(TAG, "Packet size: %d bytes", sizeof(ble_imu_pkt_t));
+                ESP_LOGI(TAG, "Total data: %.2f kB", (packets_sent * sizeof(ble_imu_pkt_t)) / 1024.0f);
 
                 cooldown_counter = 0;
                 state = STATE_COOLDOWN;
