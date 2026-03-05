@@ -140,15 +140,15 @@ void swing_manager_task(void *pvParameters)
                         if ((i + j) >= EVENT_SIZE)
                             break;
 
-                        pkt.ax[j] = swing_buffer[i+j].ax;
-                        pkt.ay[j] = swing_buffer[i+j].ay;
-                        pkt.az[j] = swing_buffer[i+j].az;
+                        pkt.sample[j].ax = swing_buffer[i+j].ax;
+                        pkt.sample[j].ay = swing_buffer[i+j].ay;
+                        pkt.sample[j].az = swing_buffer[i+j].az;
 
-                        pkt.gx[j] = swing_buffer[i+j].gx;
-                        pkt.gy[j] = swing_buffer[i+j].gy;
-                        pkt.gz[j] = swing_buffer[i+j].gz;
+                        pkt.sample[j].gx = swing_buffer[i+j].gx;
+                        pkt.sample[j].gy = swing_buffer[i+j].gy;
+                        pkt.sample[j].gz = swing_buffer[i+j].gz;
 
-                        pkt.ts_ms[j] =
+                        pkt.sample[j].ts_ms =
                             (uint32_t)(swing_buffer[i+j].timestamp_us / 1000ULL);
                     }
 

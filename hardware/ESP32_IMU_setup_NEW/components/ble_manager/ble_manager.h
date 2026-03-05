@@ -6,15 +6,21 @@
 
 typedef struct
 {
-    float ax[SAMPLES_PER_PACKET];
-    float ay[SAMPLES_PER_PACKET];
-    float az[SAMPLES_PER_PACKET];
+    float ax;
+    float ay;
+    float az;
 
-    float gx[SAMPLES_PER_PACKET];
-    float gy[SAMPLES_PER_PACKET];
-    float gz[SAMPLES_PER_PACKET];
+    float gx;
+    float gy;
+    float gz;
 
-    uint32_t ts_ms[SAMPLES_PER_PACKET];
+    uint32_t ts_ms;
+
+} imu_sample_pkt_t;
+
+typedef struct
+{
+    imu_sample_pkt_t sample[SAMPLES_PER_PACKET];
 
     uint16_t seq;
     uint16_t event_id;
