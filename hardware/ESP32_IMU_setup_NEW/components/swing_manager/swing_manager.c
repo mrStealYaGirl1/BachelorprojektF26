@@ -128,34 +128,27 @@ void swing_manager_task(void *pvParameters)
 
                 uint16_t seq = 0;
 
-                for (uint32_t i = 0; i < EVENT_SIZE; i += SAMPLES_PER_PACKET)
+                for (uint32_t i = 0; i < EVENT_SIZE; i++)
                 {
-                    ble_imu_pkt_t pkt = {0};
+                    ble_imu_pkt_t pkt;
 
-                    pkt.event_id = event_id;
+                    pkt.ax = (int16_t)(swing_buffer[i].ax * 1000);
+                    pkt.ay = (int16_t)(swing_buffer[i].ay * 1000);
+                    pkt.az = (int16_t)(swing_buffer[i].az * 1000);
+
+                    pkt.gx = (int16_t)(swing_buffer[i].gx * 100);
+                    pkt.gy = (int16_t)(swing_buffer[i].gy * 100);
+                    pkt.gz = (int16_t)(swing_buffer[i].gz * 100);
+
+                    pkt.ts_ms = (uint32_t)(swing_buffer[i].timestamp_us / 1000ULL);
+
                     pkt.seq = seq++;
-
-                    for (uint32_t j = 0; j < SAMPLES_PER_PACKET; j++)
-                    {
-                        if ((i + j) >= EVENT_SIZE)
-                            break;
-
-                        pkt.sample[j].ax = swing_buffer[i+j].ax;
-                        pkt.sample[j].ay = swing_buffer[i+j].ay;
-                        pkt.sample[j].az = swing_buffer[i+j].az;
-
-                        pkt.sample[j].gx = swing_buffer[i+j].gx;
-                        pkt.sample[j].gy = swing_buffer[i+j].gy;
-                        pkt.sample[j].gz = swing_buffer[i+j].gz;
-
-                        pkt.sample[j].ts_ms =
-                            (uint32_t)(swing_buffer[i+j].timestamp_us / 1000ULL);
-                    }
+                    pkt.event_id = event_id;
 
                     /* send via BLE manager queue */
                     (void)ble_manager_send_imu(&pkt);
 
-                    /* pacing (meget vigtigt for BLE stabilitet) */
+                    /* pacing for BLE stability */
                     vTaskDelay(pdMS_TO_TICKS(2));
                 }
 
