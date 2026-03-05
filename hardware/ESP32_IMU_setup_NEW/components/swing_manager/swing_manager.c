@@ -4,6 +4,7 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "ble_manager.h"
+#include "esp_timer.h"
 
 static const char *TAG = "SWING";
 
@@ -128,6 +129,9 @@ void swing_manager_task(void *pvParameters)
 
                 uint16_t seq = 0;
 
+                int64_t ble_start_us = esp_timer_get_time();
+                uint32_t packets_sent = 0;
+
                 for (uint32_t i = 0; i < EVENT_SIZE; i++)
                 {
                     ble_imu_pkt_t pkt;
@@ -148,11 +152,27 @@ void swing_manager_task(void *pvParameters)
                     /* send via BLE manager queue */
                     (void)ble_manager_send_imu(&pkt);
 
+                    packets_sent++;
+
                     /* pacing for BLE stability */
-                    vTaskDelay(pdMS_TO_TICKS(2));
+                    vTaskDelay(pdMS_TO_TICKS(1));   // change to 2 ms if experiencing BLE congestion
                 }
 
-                ESP_LOGI(TAG, "Swing event sent over BLE");
+                //ESP_LOGI(TAG, "Swing event sent over BLE");
+                int64_t ble_end_us = esp_timer_get_time();
+
+                float ble_time_sec = (ble_end_us - ble_start_us) / 1000000.0f;
+                float packets_per_sec = packets_sent / ble_time_sec;
+                float data_rate_kB = (packets_sent * sizeof(ble_imu_pkt_t)) / 1024.0f / ble_time_sec;
+
+                ESP_LOGI(TAG, "BLE transfer finished");
+                ESP_LOGI(TAG, "Packets sent: %lu", packets_sent);
+                ESP_LOGI(TAG, "Transfer time: %.3f sec", ble_time_sec);
+                ESP_LOGI(TAG, "Packets/sec: %.1f", packets_per_sec);
+                ESP_LOGI(TAG, "Throughput: %.2f kB/s", data_rate_kB);
+
+                ESP_LOGI(TAG, "Packet size: %d bytes", sizeof(ble_imu_pkt_t));
+                ESP_LOGI(TAG, "Total data: %.2f kB", (packets_sent * sizeof(ble_imu_pkt_t)) / 1024.0f);
 
                 cooldown_counter = 0;
                 state = STATE_COOLDOWN;
