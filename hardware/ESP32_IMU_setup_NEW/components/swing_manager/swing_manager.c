@@ -12,6 +12,7 @@ static const char *TAG = "SWING";
 #define POST_SAMPLES   600    // 3 sek
 #define EVENT_SIZE     (PRE_SAMPLES + POST_SAMPLES)
 
+<<<<<<< HEAD
 /* Scaling factors for binary transport */
 #define ACC_SCALE   1000.0f   // 0.001g resolution
 #define GYRO_SCALE  100.0f    // 0.01 dps resolution
@@ -20,6 +21,9 @@ static const char *TAG = "SWING";
    1 = send readable text over BLE
    0 = send binary struct (normal mode) */
 #define BLE_DEBUG_TEXT 1
+=======
+#define SAMPLES_PER_PACKET 10
+>>>>>>> 7e4893238acc22c77244927ebf26856342bdae96
 
 typedef enum {
     STATE_WAIT,
@@ -37,6 +41,7 @@ static uint32_t post_counter = 0;
 static uint32_t cooldown_counter = 0;
 static uint8_t impact_pending = 0;
 
+<<<<<<< HEAD
 /* -------- Binary BLE transport struct -------- */
 typedef struct __attribute__((packed)) {
     int16_t ax;
@@ -56,6 +61,9 @@ typedef struct __attribute__((packed)) {
 
 
 /* Called from IMU when impact is detected */
+=======
+
+>>>>>>> 7e4893238acc22c77244927ebf26856342bdae96
 void swing_manager_notify_impact(uint32_t index)
 {
     if (state == STATE_WAIT)
@@ -64,6 +72,7 @@ void swing_manager_notify_impact(uint32_t index)
         impact_pending = 1;
     }
 }
+
 
 static void copy_event_from_ringbuffer(void)
 {
@@ -79,6 +88,7 @@ static void copy_event_from_ringbuffer(void)
     }
 }
 
+
 void swing_manager_task(void *pvParameters)
 {
     TickType_t last_wake_time = xTaskGetTickCount();
@@ -87,24 +97,33 @@ void swing_manager_task(void *pvParameters)
     {
         switch (state)
         {
+
             case STATE_WAIT:
+
                 if (impact_pending)
                 {
                     impact_pending = 0;
                     post_counter = 0;
                     state = STATE_CAPTURE_POST;
+
                     ESP_LOGI(TAG, "Impact event started");
                 }
+
                 break;
 
+
             case STATE_CAPTURE_POST:
+
                 post_counter++;
+
                 if (post_counter >= POST_SAMPLES)
                 {
                     copy_event_from_ringbuffer();
                     state = STATE_PROCESS;
                 }
+
                 break;
+
 
             case STATE_PROCESS:
             {
@@ -122,6 +141,7 @@ void swing_manager_task(void *pvParameters)
                     tx_buffer[i].ay = (int16_t)(swing_buffer[i].ay * ACC_SCALE);
                     tx_buffer[i].az = (int16_t)(swing_buffer[i].az * ACC_SCALE);
 
+<<<<<<< HEAD
                     tx_buffer[i].gx = (int16_t)(swing_buffer[i].gx * GYRO_SCALE);
                     tx_buffer[i].gy = (int16_t)(swing_buffer[i].gy * GYRO_SCALE);
                     tx_buffer[i].gz = (int16_t)(swing_buffer[i].gz * GYRO_SCALE);
@@ -129,6 +149,12 @@ void swing_manager_task(void *pvParameters)
                     /* Normalize timestamp to event start */
                     tx_buffer[i].timestamp_us =
                         (uint32_t)(swing_buffer[i].timestamp_us - t0);
+=======
+                    float mag = ax*ax + ay*ay + az*az;
+
+                    if (mag > max_acc)
+                        max_acc = mag;
+>>>>>>> 7e4893238acc22c77244927ebf26856342bdae96
                 }
 
                 /* Prepare header */
@@ -182,48 +208,66 @@ void swing_manager_task(void *pvParameters)
                 ESP_LOGI(TAG, "Swing event sent over BLE");
 
 
+                 /* -------- BLE STREAMING -------- */
 
-                // send hele event-bufferen via BLE som en serie notifies
                 static uint16_t s_event_id = 0;
                 const uint16_t event_id = ++s_event_id;
 
-                const uint32_t DECIM = 1;                 // Decim = 4 (200/4 = 50 Hz) - så sendes kun hver 4. sample
                 uint16_t seq = 0;
 
-                for (uint32_t i = 0; i < EVENT_SIZE; i += DECIM) {
-                    ble_imu_pkt_t pkt = {
-                        .ax = swing_buffer[i].ax,
-                        .ay = swing_buffer[i].ay,
-                        .az = swing_buffer[i].az,
-                        .gx = swing_buffer[i].gx,
-                        .gy = swing_buffer[i].gy,
-                        .gz = swing_buffer[i].gz,
-                        .ts_ms = (uint32_t)(swing_buffer[i].timestamp_us / 1000ULL),
-                        .seq = seq++,
-                        .event_id = event_id,
-                    };
+                for (uint32_t i = 0; i < EVENT_SIZE; i += SAMPLES_PER_PACKET)
+                {
+                    ble_imu_pkt_t pkt = {0};
 
-                    // ✅ send via queue (så BLE ligger i egen task)
-                    // brug evt. lille delay hvis I oplever “overrun”
+                    pkt.event_id = event_id;
+                    pkt.seq = seq++;
+
+                    for (uint32_t j = 0; j < SAMPLES_PER_PACKET; j++)
+                    {
+                        if ((i + j) >= EVENT_SIZE)
+                            break;
+
+                        pkt.sample[j].ax = swing_buffer[i+j].ax;
+                        pkt.sample[j].ay = swing_buffer[i+j].ay;
+                        pkt.sample[j].az = swing_buffer[i+j].az;
+
+                        pkt.sample[j].gx = swing_buffer[i+j].gx;
+                        pkt.sample[j].gy = swing_buffer[i+j].gy;
+                        pkt.sample[j].gz = swing_buffer[i+j].gz;
+
+                        pkt.sample[j].ts_ms =
+                            (uint32_t)(swing_buffer[i+j].timestamp_us / 1000ULL);
+                    }
+
+                    /* send via BLE manager queue */
                     (void)ble_manager_send_imu(&pkt);
 
-                    // lille pacing (valgfrit men ofte nødvendigt)
-                    // vTaskDelay(pdMS_TO_TICKS(1));
+                    /* pacing (meget vigtigt for BLE stabilitet) */
+                    vTaskDelay(pdMS_TO_TICKS(2));
                 }
 
-
+                ESP_LOGI(TAG, "Swing event sent over BLE");
 
                 cooldown_counter = 0;
                 state = STATE_COOLDOWN;
+
                 break;
             }
 
+
             case STATE_COOLDOWN:
+
                 cooldown_counter++;
+<<<<<<< HEAD
                 if (cooldown_counter >= 200) // 1 second cooldown
+=======
+
+                if (cooldown_counter >= 200) // 1 sekund
+>>>>>>> 7e4893238acc22c77244927ebf26856342bdae96
                 {
                     state = STATE_WAIT;
                 }
+
                 break;
         }
 
