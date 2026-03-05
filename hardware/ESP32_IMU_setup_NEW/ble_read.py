@@ -40,11 +40,14 @@ def decode_packet(data):
         process_sample(ax, ay, az, gx, gy, gz, ts_ms)
 
 
+SWING_START_THRESHOLD = 1200
+IMPACT_THRESHOLD = 32000
+MIN_SWING_TIME = 120
+
 def process_sample(ax, ay, az, gx, gy, gz, timestamp):
 
     global max_accel, max_gyro
     global swing_start_time, impact_time
-    global samples
 
     accel = math.sqrt(ax*ax + ay*ay + az*az)
     gyro  = math.sqrt(gx*gx + gy*gy + gz*gz)
@@ -58,13 +61,20 @@ def process_sample(ax, ay, az, gx, gy, gz, timestamp):
         max_gyro = gyro
 
     # detect swing start
-    if swing_start_time is None and gyro > 300:
+    if swing_start_time is None and gyro > SWING_START_THRESHOLD:
         swing_start_time = timestamp
 
     # detect impact
-    if swing_start_time and accel > 8000 and impact_time is None:
+    if (
+        swing_start_time is not None
+        and impact_time is None
+        and (timestamp - swing_start_time) > MIN_SWING_TIME
+        and accel > IMPACT_THRESHOLD
+    ):
         impact_time = timestamp
         calculate_metrics()
+        
+        print(f"ACC:{accel:.0f}  GYRO:{gyro:.0f}")
 
 
 def calculate_metrics():
@@ -74,20 +84,10 @@ def calculate_metrics():
 
     swing_duration = impact_time - swing_start_time
 
-    downswing_time = swing_duration * 0.3
-    backswing_time = swing_duration * 0.7
-
-    tempo = backswing_time / downswing_time
-
-    print("\n============================")
-    print("SWING DETECTED")
-    print("============================")
+    print("\nSWING DETECTED")
     print(f"Max acceleration: {max_accel/2048:.2f} g")
-    print(f"Max gyro speed:   {max_gyro:.2f} deg/s")
-    print(f"Swing duration:   {swing_duration/1000:.2f} ms")
-    print(f"Impact time:      {(impact_time - swing_start_time)/1000:.2f} ms")
-    print(f"Tempo:            {tempo:.2f}")
-    print("============================\n")
+    print(f"Max gyro speed:   {max_gyro:.2f}")
+    print(f"Swing duration:   {swing_duration} ms")
 
     reset_swing()
 
