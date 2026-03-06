@@ -193,7 +193,7 @@ void swing_manager_task(void *pvParameters)
                     packets_sent++;
 
                     /* pacing for BLE stability */
-                    vTaskDelay(pdMS_TO_TICKS(1));
+                    vTaskDelay(pdMS_TO_TICKS(2));
                 }
 
                 //ESP_LOGI(TAG, "Swing event sent over BLE");
