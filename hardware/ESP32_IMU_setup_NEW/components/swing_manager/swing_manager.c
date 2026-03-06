@@ -150,53 +150,130 @@ void swing_manager_task(void *pvParameters)
                 uint32_t overflow_acc_count = 0;
                 uint32_t overflow_gyro_count = 0;
 
-                for (uint32_t i = 0; i < EVENT_SIZE; i++)
+                 for (uint32_t i = 0; i < EVENT_SIZE; i += BLE_IMU_SAMPLES_PER_PKT)
                 {
                     ble_imu_pkt_t pkt;
-
-                    int32_t ax_raw = (int32_t)swing_buffer[i].ax;
-                    int32_t ay_raw = (int32_t)swing_buffer[i].ay;
-                    int32_t az_raw = (int32_t)swing_buffer[i].az;
-
-                    int32_t gx_raw = (int32_t)swing_buffer[i].gx;
-                    int32_t gy_raw = (int32_t)swing_buffer[i].gy;
-                    int32_t gz_raw = (int32_t)swing_buffer[i].gz;
-
-                    if (ax_raw > INT16_MAX || ax_raw < INT16_MIN ||
-                        ay_raw > INT16_MAX || ay_raw < INT16_MIN ||
-                        az_raw > INT16_MAX || az_raw < INT16_MIN)
-                    {
-                        overflow_acc_count++;
-                    }
-
-                    if (gx_raw > INT16_MAX || gx_raw < INT16_MIN ||
-                        gy_raw > INT16_MAX || gy_raw < INT16_MIN ||
-                        gz_raw > INT16_MAX || gz_raw < INT16_MIN)
-                    {
-                        overflow_gyro_count++;
-                    }
-
-                    pkt.ax = (int16_t)ax_raw;
-                    pkt.ay = (int16_t)ay_raw;
-                    pkt.az = (int16_t)az_raw;
-
-                    pkt.gx = (int16_t)gx_raw;
-                    pkt.gy = (int16_t)gy_raw;
-                    pkt.gz = (int16_t)gz_raw;
-
-                    pkt.ts_ms = (uint32_t)(swing_buffer[i].timestamp_us / 1000ULL);
-
-                    pkt.seq = seq++;
                     pkt.event_id = event_id;
+                    pkt.sample_count = 0;
 
-                    (void)ble_manager_send_imu(&pkt);
+                    /* nulstil resten for pænhed */
+                    for (uint32_t k = 0; k < BLE_IMU_SAMPLES_PER_PKT; k++)
+                    {
+                        pkt.samples[k].ax = 0;
+                        pkt.samples[k].ay = 0;
+                        pkt.samples[k].az = 0;
+                        pkt.samples[k].gx = 0;
+                        pkt.samples[k].gy = 0;
+                        pkt.samples[k].gz = 0;
+                        pkt.samples[k].ts_ms = 0;
+                        pkt.samples[k].seq = 0;
+                    }
+
+                    for (uint32_t j = 0; j < BLE_IMU_SAMPLES_PER_PKT && (i + j) < EVENT_SIZE; j++)
+                    {
+                        uint32_t idx = i + j;
+
+                        int32_t ax_raw = (int32_t)swing_buffer[idx].ax;
+                        int32_t ay_raw = (int32_t)swing_buffer[idx].ay;
+                        int32_t az_raw = (int32_t)swing_buffer[idx].az;
+
+                        int32_t gx_raw = (int32_t)swing_buffer[idx].gx;
+                        int32_t gy_raw = (int32_t)swing_buffer[idx].gy;
+                        int32_t gz_raw = (int32_t)swing_buffer[idx].gz;
+
+                        if (ax_raw > INT16_MAX || ax_raw < INT16_MIN ||
+                            ay_raw > INT16_MAX || ay_raw < INT16_MIN ||
+                            az_raw > INT16_MAX || az_raw < INT16_MIN)
+                        {
+                            overflow_acc_count++;
+                        }
+
+                        if (gx_raw > INT16_MAX || gx_raw < INT16_MIN ||
+                            gy_raw > INT16_MAX || gy_raw < INT16_MIN ||
+                            gz_raw > INT16_MAX || gz_raw < INT16_MIN)
+                        {
+                            overflow_gyro_count++;
+                        }
+
+                        pkt.samples[j].ax = (int16_t)ax_raw;
+                        pkt.samples[j].ay = (int16_t)ay_raw;
+                        pkt.samples[j].az = (int16_t)az_raw;
+
+                        pkt.samples[j].gx = (int16_t)gx_raw;
+                        pkt.samples[j].gy = (int16_t)gy_raw;
+                        pkt.samples[j].gz = (int16_t)gz_raw;
+
+                        pkt.samples[j].ts_ms = (uint32_t)(swing_buffer[idx].timestamp_us / 1000ULL);
+                        pkt.samples[j].seq = seq++;
+
+                        pkt.sample_count++;
+                    }
+
+                    (void)ble_manager_send_imu_pkt(&pkt);
                     packets_sent++;
 
-                    /* pacing for BLE stability */
+                    /* mindre antal pakker nu, så 2 ms er fint at starte med */
                     vTaskDelay(pdMS_TO_TICKS(2));
                 }
 
-                //ESP_LOGI(TAG, "Swing event sent over BLE");
+                // for (uint32_t i = 0; i < EVENT_SIZE; i += BLE_IMU_SAMPLES_PER_PKT)
+                // {
+                //     ble_imu_pkt_t pkt;
+                //     memset(&pkt, 0, sizeof(pkt));
+
+                //     pkt.event_id = event_id;
+                //     pkt.sample_count = 0;
+
+                //     for (uint32_t j = 0; j < BLE_IMU_SAMPLES_PER_PKT && (i + j) < EVENT_SIZE; j++)
+                //     {
+                //         uint32_t idx = i + j;
+
+                //         int32_t ax_raw = (int32_t)swing_buffer[idx].ax;
+                //         int32_t ay_raw = (int32_t)swing_buffer[idx].ay;
+                //         int32_t az_raw = (int32_t)swing_buffer[idx].az;
+
+                //         int32_t gx_raw = (int32_t)swing_buffer[idx].gx;
+                //         int32_t gy_raw = (int32_t)swing_buffer[idx].gy;
+                //         int32_t gz_raw = (int32_t)swing_buffer[idx].gz;
+
+                //         if (ax_raw > INT16_MAX || ax_raw < INT16_MIN ||
+                //             ay_raw > INT16_MAX || ay_raw < INT16_MIN ||
+                //             az_raw > INT16_MAX || az_raw < INT16_MIN)
+                //         {
+                //             overflow_acc_count++;
+                //         }
+
+                //         if (gx_raw > INT16_MAX || gx_raw < INT16_MIN ||
+                //             gy_raw > INT16_MAX || gy_raw < INT16_MIN ||
+                //             gz_raw > INT16_MAX || gz_raw < INT16_MIN)
+                //         {
+                //             overflow_gyro_count++;
+                //         }
+
+                //         pkt.samples[j].ax = (int16_t)ax_raw;
+                //         pkt.samples[j].ay = (int16_t)ay_raw;
+                //         pkt.samples[j].az = (int16_t)az_raw;
+
+                //         pkt.samples[j].gx = (int16_t)gx_raw;
+                //         pkt.samples[j].gy = (int16_t)gy_raw;
+                //         pkt.samples[j].gz = (int16_t)gz_raw;
+
+                //         pkt.samples[j].ts_ms =
+                //             (uint32_t)(swing_buffer[idx].timestamp_us / 1000ULL);
+
+                //         pkt.samples[j].seq = seq++;
+
+                //         pkt.sample_count++;
+                //     }
+
+                //     (void)ble_manager_send_imu(&pkt);
+                //     packets_sent++;
+
+                //     /* pacing for BLE stability */
+                //     vTaskDelay(pdMS_TO_TICKS(2));
+                // }
+
+                ESP_LOGI(TAG, "Swing event sent over BLE");
                 int64_t ble_end_us = esp_timer_get_time();
 
                 float ble_time_sec = (ble_end_us - ble_start_us) / 1000000.0f;

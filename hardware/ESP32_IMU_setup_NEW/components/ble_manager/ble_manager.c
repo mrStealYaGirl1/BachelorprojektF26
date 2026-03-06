@@ -1,4 +1,4 @@
-// components/ble_manager/ble_manager.c
+// ble_manager.c
 
 #include "ble_manager.h"
 
@@ -34,7 +34,7 @@ static uint16_t s_chr_val_handle = 0;
 static bool s_notify_enabled = false;
 
 /* =========================================================
-   FORWARD DECLARATIONS  (fixer dine compile-fejl)
+   FORWARD DECLARATIONS
 ========================================================= */
 static void ble_start_advertising(void);
 static int gap_event(struct ble_gap_event *event, void *arg);
@@ -245,9 +245,8 @@ void ble_manager_init(void)
 
     ble_initialized = true;
 }
-
 /* =========================================================
-   NOTIFY API
+   NOTIFY API - SIMPLE
 ========================================================= */
 bool ble_manager_notify_simple(uint32_t counter, uint32_t timestamp_ms)
 {
@@ -265,7 +264,7 @@ bool ble_manager_notify_simple(uint32_t counter, uint32_t timestamp_ms)
 }
 
 /* =========================================================
-   QUEUE-BASED TX TASK (brug den fra IMU)
+   SIMPLE TX TASK
 ========================================================= */
 static QueueHandle_t s_ble_q = NULL;
 static TaskHandle_t s_ble_tx_task_handle = NULL;
@@ -278,12 +277,7 @@ static void ble_tx_task(void *arg)
 
     while (1) {
         if (xQueueReceive(s_ble_q, &msg, portMAX_DELAY) == pdTRUE) {
-            bool ok = ble_manager_notify_simple(msg.counter, msg.timestamp_ms);
-            if (!ok) {
-                // Ikke connected / notify ikke enabled endnu -> vi dropper bare
-                // (kan logges hvis du vil)
-                // ESP_LOGD(TAG, "notify skipped (not connected or not subscribed)");
-            }
+            (void)ble_manager_notify_simple(msg.counter, msg.timestamp_ms);
         }
     }
 }
@@ -306,8 +300,10 @@ bool ble_manager_send_simple(uint32_t counter, uint32_t timestamp_ms)
     return (xQueueSend(s_ble_q, &msg, 0) == pdTRUE);
 }
 
-
-bool ble_manager_notify_imu(const ble_imu_pkt_t *pkt)
+/* =========================================================
+   NOTIFY API - IMU PKT
+========================================================= */
+bool ble_manager_notify_imu_pkt(const ble_imu_pkt_t *pkt)
 {
     if (s_conn_handle == BLE_HS_CONN_HANDLE_NONE) return false;
     if (!s_notify_enabled) return false;
@@ -320,6 +316,9 @@ bool ble_manager_notify_imu(const ble_imu_pkt_t *pkt)
     return (rc == 0);
 }
 
+/* =========================================================
+   IMU TX TASK
+========================================================= */
 static QueueHandle_t s_imu_q = NULL;
 static TaskHandle_t s_imu_tx_task = NULL;
 
@@ -330,7 +329,7 @@ static void ble_imu_tx_task(void *arg)
 
     while (1) {
         if (xQueueReceive(s_imu_q, &pkt, portMAX_DELAY) == pdTRUE) {
-            (void)ble_manager_notify_imu(&pkt); // dropper hvis ikke connected/subscribed
+            (void)ble_manager_notify_imu_pkt(&pkt);
         }
     }
 }
@@ -339,15 +338,14 @@ void ble_manager_start_imu_tx_task(void)
 {
     if (s_imu_q) return;
 
-    s_imu_q = xQueueCreate(64, sizeof(ble_imu_pkt_t));
+    s_imu_q = xQueueCreate(32, sizeof(ble_imu_pkt_t));
     configASSERT(s_imu_q);
 
     xTaskCreate(ble_imu_tx_task, "ble_imu_tx", 4096, NULL, 6, &s_imu_tx_task);
 }
 
-bool ble_manager_send_imu(const ble_imu_pkt_t *pkt)
+bool ble_manager_send_imu_pkt(const ble_imu_pkt_t *pkt)
 {
     if (!s_imu_q) return false;
-    //return (xQueueSend(s_imu_q, pkt, 0) == pdTRUE);
-    return (xQueueSend(s_imu_q, pkt, pdMS_TO_TICKS(50)) == pdTRUE); // lidt timeout for at undgå at blokere hvis queue er fuld (kan ske hvis BLE ikke kan følge med)
+    return (xQueueSend(s_imu_q, pkt, pdMS_TO_TICKS(50)) == pdTRUE);
 }

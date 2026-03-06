@@ -2,7 +2,9 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-typedef struct
+#define BLE_IMU_SAMPLES_PER_PKT 5
+
+typedef struct __attribute__((packed))
 {
     int16_t ax;
     int16_t ay;
@@ -13,10 +15,14 @@ typedef struct
     int16_t gz;
 
     uint32_t ts_ms;
-
     uint16_t seq;
-    uint16_t event_id;
+} ble_imu_sample_t;
 
+typedef struct __attribute__((packed))
+{
+    uint16_t event_id;
+    uint16_t sample_count;   // hvor mange samples er gyldige i denne pakke
+    ble_imu_sample_t samples[BLE_IMU_SAMPLES_PER_PKT];
 } ble_imu_pkt_t;
 
 void ble_manager_init(void);
@@ -26,7 +32,7 @@ void ble_manager_start_tx_task(void);
 bool ble_manager_send_simple(uint32_t counter, uint32_t timestamp_ms);
 bool ble_manager_notify_simple(uint32_t counter, uint32_t timestamp_ms);
 
-// Fremtidige API'er til at sende IMU data (i stedet for simple beskeder)
-bool ble_manager_notify_imu(const ble_imu_pkt_t *pkt);
+// IMU batch API
+bool ble_manager_notify_imu_pkt(const ble_imu_pkt_t *pkt);
 void ble_manager_start_imu_tx_task(void);
-bool ble_manager_send_imu(const ble_imu_pkt_t *pkt);
+bool ble_manager_send_imu_pkt(const ble_imu_pkt_t *pkt);

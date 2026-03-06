@@ -145,7 +145,6 @@
 
 
 # asyncio.run(main())
-
 import asyncio
 import struct
 import math
@@ -154,13 +153,28 @@ from bleak import BleakClient, BleakScanner
 DEVICE_NAME = "GOLF_IMU"
 CHAR_UUID = "99887766-5544-3322-1100-ffeeddccbbaa"
 
-SAMPLE_SIZE = 20
+# ESP32-side
+BLE_IMU_SAMPLES_PER_PKT = 5
 
-# BMI270 setup from ESP32 code
-ACC_LSB_PER_G = 16384.0          # ±2g
-GYRO_DPS_PER_LSB = 2000.0 / 32768.0   # ±2000 dps
+# packet:
+# uint16 event_id
+# uint16 sample_count
+# samples[5]
+#
+# sample:
+# h h h h h h I H
+# = 18 bytes
 
-# event state
+PKT_HEADER_FMT = "<HH"
+SAMPLE_FMT = "<hhhhhhIH"
+
+PKT_HEADER_SIZE = struct.calcsize(PKT_HEADER_FMT)   # 4
+SAMPLE_SIZE = struct.calcsize(SAMPLE_FMT)           # 18
+PKT_SIZE = PKT_HEADER_SIZE + BLE_IMU_SAMPLES_PER_PKT * SAMPLE_SIZE
+
+ACC_LSB_PER_G = 16384.0
+GYRO_DPS_PER_LSB = 2000.0 / 32768.0
+
 current_event_id = None
 current_event_samples = []
 
@@ -171,14 +185,21 @@ last_ts_ms = None
 
 
 def decode_packet(data: bytes):
-    count = len(data) // SAMPLE_SIZE
+    if len(data) != PKT_SIZE:
+        print(f"Unexpected packet size: {len(data)} (expected {PKT_SIZE})")
+        return
 
-    for i in range(count):
-        start = i * SAMPLE_SIZE
-        end = start + SAMPLE_SIZE
-        sample = data[start:end]
+    event_id, sample_count = struct.unpack_from(PKT_HEADER_FMT, data, 0)
 
-        ax, ay, az, gx, gy, gz, ts_ms, seq, event_id = struct.unpack("<hhhhhhIHH", sample)
+    if sample_count > BLE_IMU_SAMPLES_PER_PKT:
+        print(f"Invalid sample_count: {sample_count}")
+        return
+
+    offset = PKT_HEADER_SIZE
+
+    for i in range(sample_count):
+        ax, ay, az, gx, gy, gz, ts_ms, seq = struct.unpack_from(SAMPLE_FMT, data, offset)
+        offset += SAMPLE_SIZE
 
         process_sample(ax, ay, az, gx, gy, gz, ts_ms, seq, event_id)
 
@@ -187,15 +208,12 @@ def process_sample(ax, ay, az, gx, gy, gz, ts_ms, seq, event_id):
     global current_event_id, current_event_samples
     global max_accel_g, max_gyro_dps, first_ts_ms, last_ts_ms
 
-    # detect new event
     if current_event_id is None:
         start_new_event(event_id)
-
     elif event_id != current_event_id:
         finalize_event()
         start_new_event(event_id)
 
-    # convert raw -> physical units
     ax_g = ax / ACC_LSB_PER_G
     ay_g = ay / ACC_LSB_PER_G
     az_g = az / ACC_LSB_PER_G
@@ -216,12 +234,6 @@ def process_sample(ax, ay, az, gx, gy, gz, ts_ms, seq, event_id):
         "gx_raw": gx,
         "gy_raw": gy,
         "gz_raw": gz,
-        "ax_g": ax_g,
-        "ay_g": ay_g,
-        "az_g": az_g,
-        "gx_dps": gx_dps,
-        "gy_dps": gy_dps,
-        "gz_dps": gz_dps,
         "accel_g": accel_g,
         "gyro_dps": gyro_dps,
     })
@@ -284,7 +296,7 @@ def finalize_event():
     print(f"Duration:          {duration_ms} ms")
     print(f"Max acceleration:  {max_accel_g:.2f} g")
     print(f"Max gyro speed:    {max_gyro_dps:.2f} dps")
-    print(f"Missing packets:   {missing_packets}")
+    print(f"Missing samples:   {missing_packets}")
     print("=================================\n")
 
 
