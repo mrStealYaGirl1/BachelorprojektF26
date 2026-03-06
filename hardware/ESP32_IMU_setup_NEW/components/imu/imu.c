@@ -365,36 +365,6 @@ void imu_task(void *pvParameters)
 
             last_gyro_mag_dps = sqrtf(gx_dps*gx_dps + gy_dps*gy_dps + gz_dps*gz_dps);
 
-
-            // // Send simpel BLE msg hver 1 sekund
-            // if ((xTaskGetTickCount() - last_send) >= pdMS_TO_TICKS(1000)) {
-            //     last_send = xTaskGetTickCount();
-
-            //     uint32_t ts_ms = (uint32_t)(esp_timer_get_time() / 1000ULL);
-            //     //ble_manager_send_simple(counter++, ts_ms);
-            //     ble_manager_notify_simple(counter++, ts_ms);
-            // }
-            
-            // Send IMU data via BLE (enten direkte eller via queue)
-            // ble_imu_pkt_t pkt = {
-            //     .ax = sample.ax,
-            //     .ay = sample.ay,
-            //     .az = sample.az,
-            //     .gx = sample.gx,
-            //     .gy = sample.gy,
-            //     .gz = sample.gz,
-            //     .ts_ms = (uint32_t)(sample.timestamp_us / 1000ULL),
-            // };
-
-            // // Send "seneste sample" hver 5 sekund for at have noget data i appen, selvom der ikke er nogen impact
-            // static uint32_t last_send_ms = 0;
-            // uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000ULL);
-
-            // if ((now_ms - last_send_ms) >= 5000) {   // 5 sek
-            //     last_send_ms = now_ms;
-            //     ble_manager_send_imu(&pkt);
-            // }
-
             if (detect_impact(acc_dynamic))
             {
                 uint32_t idx = (imu_rb.write_index == 0)
