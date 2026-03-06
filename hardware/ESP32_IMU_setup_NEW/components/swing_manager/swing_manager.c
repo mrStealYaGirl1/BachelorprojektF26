@@ -5,6 +5,7 @@
 #include "esp_log.h"
 #include "ble_manager.h"
 #include "esp_timer.h"
+#include <limits.h>
 
 static const char *TAG = "SWING";
 
@@ -12,8 +13,6 @@ static const char *TAG = "SWING";
 #define PRE_SAMPLES    1000   // 5 sek
 #define POST_SAMPLES   600    // 3 sek
 #define EVENT_SIZE     (PRE_SAMPLES + POST_SAMPLES)
-
-#define SAMPLES_PER_PACKET 10
 
 typedef enum {
     STATE_WAIT,
@@ -97,7 +96,7 @@ void swing_manager_task(void *pvParameters)
             {
                 ESP_LOGI(TAG, "Processing swing event");
 
-                float max_acc = 0;
+                float max_acc_energy = 0.0f;
 
                 for (uint32_t i = 0; i < EVENT_SIZE; i++)
                 {
@@ -105,13 +104,28 @@ void swing_manager_task(void *pvParameters)
                     float ay = swing_buffer[i].ay;
                     float az = swing_buffer[i].az;
 
-                    float mag = ax*ax + ay*ay + az*az;
+                    float mag = ax * ax + ay * ay + az * az;
 
-                    if (mag > max_acc)
-                        max_acc = mag;
+                    if (mag > max_acc_energy)
+                    {
+                        max_acc_energy = mag;
+                    }
                 }
 
-                ESP_LOGI(TAG, "Max raw acc energy: %.2f", max_acc);
+                ESP_LOGI(TAG, "Max raw acc energy: %.2f", max_acc_energy);
+                
+                for (uint32_t i = 0; i < 10 && i < EVENT_SIZE; i++)
+                                {
+                                    ESP_LOGI(TAG,
+                                    "RAW[%lu] ax=%d ay=%d az=%d gx=%d gy=%d gz=%d",
+                                    (unsigned long)i,
+                                    (int)swing_buffer[i].ax,
+                                    (int)swing_buffer[i].ay,
+                                    (int)swing_buffer[i].az,
+                                    (int)swing_buffer[i].gx,
+                                    (int)swing_buffer[i].gy,
+                                    (int)swing_buffer[i].gz);
+                                }
 
                 int64_t t0 = swing_buffer[0].timestamp_us;
                 int64_t tImpact = swing_buffer[PRE_SAMPLES].timestamp_us;
@@ -132,31 +146,128 @@ void swing_manager_task(void *pvParameters)
                 int64_t ble_start_us = esp_timer_get_time();
                 uint32_t packets_sent = 0;
 
+                 /* overflow counters for this event */
+                uint32_t overflow_acc_count = 0;
+                uint32_t overflow_gyro_count = 0;
+
                 for (uint32_t i = 0; i < EVENT_SIZE; i++)
                 {
                     ble_imu_pkt_t pkt;
 
-                    pkt.ax = (int16_t)(swing_buffer[i].ax * 1000);
-                    pkt.ay = (int16_t)(swing_buffer[i].ay * 1000);
-                    pkt.az = (int16_t)(swing_buffer[i].az * 1000);
+                    int32_t ax_raw = (int32_t)swing_buffer[i].ax;
+                    int32_t ay_raw = (int32_t)swing_buffer[i].ay;
+                    int32_t az_raw = (int32_t)swing_buffer[i].az;
 
-                    pkt.gx = (int16_t)(swing_buffer[i].gx * 100);
-                    pkt.gy = (int16_t)(swing_buffer[i].gy * 100);
-                    pkt.gz = (int16_t)(swing_buffer[i].gz * 100);
+                    int32_t gx_raw = (int32_t)swing_buffer[i].gx;
+                    int32_t gy_raw = (int32_t)swing_buffer[i].gy;
+                    int32_t gz_raw = (int32_t)swing_buffer[i].gz;
+
+                    if (ax_raw > INT16_MAX || ax_raw < INT16_MIN ||
+                        ay_raw > INT16_MAX || ay_raw < INT16_MIN ||
+                        az_raw > INT16_MAX || az_raw < INT16_MIN)
+                    {
+                        overflow_acc_count++;
+                    }
+
+                    if (gx_raw > INT16_MAX || gx_raw < INT16_MIN ||
+                        gy_raw > INT16_MAX || gy_raw < INT16_MIN ||
+                        gz_raw > INT16_MAX || gz_raw < INT16_MIN)
+                    {
+                        overflow_gyro_count++;
+                    }
+
+                    pkt.ax = (int16_t)ax_raw;
+                    pkt.ay = (int16_t)ay_raw;
+                    pkt.az = (int16_t)az_raw;
+
+                    pkt.gx = (int16_t)gx_raw;
+                    pkt.gy = (int16_t)gy_raw;
+                    pkt.gz = (int16_t)gz_raw;
 
                     pkt.ts_ms = (uint32_t)(swing_buffer[i].timestamp_us / 1000ULL);
 
                     pkt.seq = seq++;
                     pkt.event_id = event_id;
 
-                    /* send via BLE manager queue */
                     (void)ble_manager_send_imu(&pkt);
-
                     packets_sent++;
 
                     /* pacing for BLE stability */
-                    vTaskDelay(pdMS_TO_TICKS(1));   // change to 2 ms if experiencing BLE congestion
+                    vTaskDelay(pdMS_TO_TICKS(1));
                 }
+
+
+
+                //     ble_imu_pkt_t pkt;
+
+                //     float ax_scaled = swing_buffer[i].ax * 100.0f;
+                //     float ay_scaled = swing_buffer[i].ay * 100.0f;
+                //     float az_scaled = swing_buffer[i].az * 100.0f;
+
+                //     float gx_scaled = swing_buffer[i].gx * 10.0f;
+                //     float gy_scaled = swing_buffer[i].gy * 10.0f;
+                //     float gz_scaled = swing_buffer[i].gz * 10.0f;
+
+                //     if (ax_scaled > INT16_MAX || ax_scaled < INT16_MIN ||
+                //         ay_scaled > INT16_MAX || ay_scaled < INT16_MIN ||
+                //         az_scaled > INT16_MAX || az_scaled < INT16_MIN)
+                //     {
+                //         overflow_acc_count++;
+                //     }
+
+                //     if (gx_scaled > INT16_MAX || gx_scaled < INT16_MIN ||
+                //         gy_scaled > INT16_MAX || gy_scaled < INT16_MIN ||
+                //         gz_scaled > INT16_MAX || gz_scaled < INT16_MIN)
+                //     {
+                //         overflow_gyro_count++;
+                //     }
+
+                //     pkt.ax = (int16_t)ax_scaled;
+                //     pkt.ay = (int16_t)ay_scaled;
+                //     pkt.az = (int16_t)az_scaled;
+
+                //     pkt.gx = (int16_t)gx_scaled;
+                //     pkt.gy = (int16_t)gy_scaled;
+                //     pkt.gz = (int16_t)gz_scaled;
+
+                //     pkt.ts_ms = (uint32_t)(swing_buffer[i].timestamp_us / 1000ULL);
+
+                //     pkt.seq = seq++;
+                //     pkt.event_id = event_id;
+
+                //     /* send via BLE manager queue */
+                //     (void)ble_manager_send_imu(&pkt);
+
+                //     packets_sent++;
+
+                //     /* pacing for BLE stability */
+                //     vTaskDelay(pdMS_TO_TICKS(1));   // change to 2 ms if experiencing BLE congestion
+                // }
+
+
+                //     ble_imu_pkt_t pkt;
+
+                //     pkt.ax = (int16_t)(swing_buffer[i].ax * 100);
+                //     pkt.ay = (int16_t)(swing_buffer[i].ay * 100);
+                //     pkt.az = (int16_t)(swing_buffer[i].az * 100);
+
+                //     pkt.gx = (int16_t)(swing_buffer[i].gx * 10);
+                //     pkt.gy = (int16_t)(swing_buffer[i].gy * 10);
+                //     pkt.gz = (int16_t)(swing_buffer[i].gz * 10);
+
+                //     pkt.ts_ms = (uint32_t)(swing_buffer[i].timestamp_us / 1000ULL);
+
+                //     pkt.seq = seq++;
+                //     pkt.event_id = event_id;
+
+                //     /* send via BLE manager queue */
+                //     (void)ble_manager_send_imu(&pkt);
+
+                //     packets_sent++;
+
+                //     /* pacing for BLE stability */
+                //     vTaskDelay(pdMS_TO_TICKS(2));   // change to 2 ms if experiencing BLE congestion
+                // }
 
                 //ESP_LOGI(TAG, "Swing event sent over BLE");
                 int64_t ble_end_us = esp_timer_get_time();
@@ -173,6 +284,9 @@ void swing_manager_task(void *pvParameters)
 
                 ESP_LOGI(TAG, "Packet size: %d bytes", sizeof(ble_imu_pkt_t));
                 ESP_LOGI(TAG, "Total data: %.2f kB", (packets_sent * sizeof(ble_imu_pkt_t)) / 1024.0f);
+
+                ESP_LOGI(TAG, "ACC overflow count: %lu", overflow_acc_count);
+                ESP_LOGI(TAG, "GYRO overflow count: %lu", overflow_gyro_count);
 
                 cooldown_counter = 0;
                 state = STATE_COOLDOWN;
