@@ -1,7 +1,7 @@
 import asyncio
 import struct
-import math
 import csv
+from datetime import datetime
 from bleak import BleakClient, BleakScanner
 
 DEVICE_NAME = "GOLF_IMU"
@@ -17,11 +17,16 @@ PKT_SIZE = PKT_HEADER_SIZE + BLE_IMU_SAMPLES_PER_PKT * SAMPLE_SIZE
 
 csv_file = None
 csv_writer = None
+csv_filename = None
 
 
 def open_csv_file():
-    global csv_file, csv_writer
-    csv_file = open("golf_event.csv", "w", newline="")
+    global csv_file, csv_writer, csv_filename
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    csv_filename = f"golf_event_{timestamp}.csv"
+
+    csv_file = open(csv_filename, "w", newline="", encoding="utf-8")
     csv_writer = csv.writer(csv_file)
     csv_writer.writerow([
         "event_id", "seq", "ts_ms",
@@ -29,11 +34,14 @@ def open_csv_file():
         "gx", "gy", "gz"
     ])
 
+    print(f"Saving data to: {csv_filename}")
+
 
 def close_csv_file():
     global csv_file
     if csv_file:
         csv_file.close()
+        print("CSV file closed.")
 
 
 def decode_packet(data: bytes):

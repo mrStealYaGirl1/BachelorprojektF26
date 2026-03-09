@@ -1,3 +1,4 @@
+import sys
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -85,6 +86,15 @@ def prepare_data(df: pd.DataFrame) -> pd.DataFrame:
 # MAIN
 # =========================
 def main():
+
+    if len(sys.argv) < 2:
+        print("Brug: python visualize_golf.py <csv_fil>")
+        return
+
+    CSV_FILE = sys.argv[1]
+
+    print(f"Indlæser fil: {CSV_FILE}")
+
     df = pd.read_csv(CSV_FILE)
 
     print(f"Oprindelige samples: {len(df)}")
@@ -110,7 +120,7 @@ def main():
     axes[0].axvline(acc_peak_t, linestyle="--", linewidth=1, label="Peak acc")
     axes[0].axvline(gyro_peak_t, linestyle=":", linewidth=1, label="Peak gyro")
     axes[0].set_ylabel("Vinkel [deg]")
-    axes[0].set_title("Golf-event analyse")
+    axes[0].set_title(f"Golf-event analyse ({CSV_FILE})")
     axes[0].grid(True)
     axes[0].legend()
 
@@ -137,6 +147,7 @@ def main():
 
     plt.tight_layout()
     plt.show()
+
 
 if __name__ == "__main__":
     main()
