@@ -144,11 +144,15 @@ void swing_manager_task(void *pvParameters)
                 uint16_t seq = 0;
 
                 int64_t ble_start_us = esp_timer_get_time();
-                uint32_t packets_sent = 0;
+                uint32_t packets_queued = 0;
+                uint32_t queue_drop_count = 0;
 
                  /* overflow counters for this event */
                 uint32_t overflow_acc_count = 0;
                 uint32_t overflow_gyro_count = 0;
+
+                /* nulstil BLE notify-statistik for dette event */
+                ble_manager_reset_notify_stats();
 
                  for (uint32_t i = 0; i < EVENT_SIZE; i += BLE_IMU_SAMPLES_PER_PKT)
                 {
@@ -208,93 +212,54 @@ void swing_manager_task(void *pvParameters)
 
                         pkt.sample_count++;
                     }
+                    
+                    // Check returværdi fra ble_manager_send_imu_pkt
+                    bool queued = ble_manager_send_imu_pkt(&pkt);
+                    if (!queued)
+                    {
+                        queue_drop_count++;
+                        ESP_LOGW(TAG,
+                                 "IMU pkt dropped before queue: event=%u seq_start=%u",
+                                 event_id,
+                                 pkt.samples[0].seq);
+                    }
+                    else
+                    {
+                        packets_queued++;
+                    }
 
-                    (void)ble_manager_send_imu_pkt(&pkt);
-                    packets_sent++;
-
-                    /* mindre antal pakker nu, så 2 ms er fint at starte med */
-                    vTaskDelay(pdMS_TO_TICKS(2));
+                    /* Ingen delay her – pacing styres i BLE TX-tasken */
+                    //vTaskDelay(pdMS_TO_TICKS(2));
+                                  
                 }
 
-                // for (uint32_t i = 0; i < EVENT_SIZE; i += BLE_IMU_SAMPLES_PER_PKT)
-                // {
-                //     ble_imu_pkt_t pkt;
-                //     memset(&pkt, 0, sizeof(pkt));
 
-                //     pkt.event_id = event_id;
-                //     pkt.sample_count = 0;
-
-                //     for (uint32_t j = 0; j < BLE_IMU_SAMPLES_PER_PKT && (i + j) < EVENT_SIZE; j++)
-                //     {
-                //         uint32_t idx = i + j;
-
-                //         int32_t ax_raw = (int32_t)swing_buffer[idx].ax;
-                //         int32_t ay_raw = (int32_t)swing_buffer[idx].ay;
-                //         int32_t az_raw = (int32_t)swing_buffer[idx].az;
-
-                //         int32_t gx_raw = (int32_t)swing_buffer[idx].gx;
-                //         int32_t gy_raw = (int32_t)swing_buffer[idx].gy;
-                //         int32_t gz_raw = (int32_t)swing_buffer[idx].gz;
-
-                //         if (ax_raw > INT16_MAX || ax_raw < INT16_MIN ||
-                //             ay_raw > INT16_MAX || ay_raw < INT16_MIN ||
-                //             az_raw > INT16_MAX || az_raw < INT16_MIN)
-                //         {
-                //             overflow_acc_count++;
-                //         }
-
-                //         if (gx_raw > INT16_MAX || gx_raw < INT16_MIN ||
-                //             gy_raw > INT16_MAX || gy_raw < INT16_MIN ||
-                //             gz_raw > INT16_MAX || gz_raw < INT16_MIN)
-                //         {
-                //             overflow_gyro_count++;
-                //         }
-
-                //         pkt.samples[j].ax = (int16_t)ax_raw;
-                //         pkt.samples[j].ay = (int16_t)ay_raw;
-                //         pkt.samples[j].az = (int16_t)az_raw;
-
-                //         pkt.samples[j].gx = (int16_t)gx_raw;
-                //         pkt.samples[j].gy = (int16_t)gy_raw;
-                //         pkt.samples[j].gz = (int16_t)gz_raw;
-
-                //         pkt.samples[j].ts_ms =
-                //             (uint32_t)(swing_buffer[idx].timestamp_us / 1000ULL);
-
-                //         pkt.samples[j].seq = seq++;
-
-                //         pkt.sample_count++;
-                //     }
-
-                //     (void)ble_manager_send_imu(&pkt);
-                //     packets_sent++;
-
-                //     /* pacing for BLE stability */
-                //     vTaskDelay(pdMS_TO_TICKS(2));
-                // }
 
                 ESP_LOGI(TAG, "Swing event sent over BLE");
+
                 int64_t ble_end_us = esp_timer_get_time();
-
                 float ble_time_sec = (ble_end_us - ble_start_us) / 1000000.0f;
-                float packets_per_sec = packets_sent / ble_time_sec;
-                float data_rate_kB = (packets_sent * sizeof(ble_imu_pkt_t)) / 1024.0f / ble_time_sec;
+                float packets_per_sec = (ble_time_sec > 0.0f) ? (packets_queued / ble_time_sec) : 0.0f;
+                float data_rate_kB = (ble_time_sec > 0.0f)
+                    ? ((packets_queued * sizeof(ble_imu_pkt_t)) / 1024.0f / ble_time_sec)
+                    : 0.0f;
 
-                ESP_LOGI(TAG, "BLE transfer finished");
-                ESP_LOGI(TAG, "Packets sent: %lu", packets_sent);
-                ESP_LOGI(TAG, "Transfer time: %.3f sec", ble_time_sec);
-                ESP_LOGI(TAG, "Packets/sec: %.1f", packets_per_sec);
-                ESP_LOGI(TAG, "Throughput: %.2f kB/s", data_rate_kB);
+                ESP_LOGI(TAG, "BLE queueing finished");
+                ESP_LOGI(TAG, "Packets queued: %lu", (unsigned long)packets_queued);
+                ESP_LOGI(TAG, "Queue drops: %lu", (unsigned long)queue_drop_count);
+                ESP_LOGI(TAG, "Queueing time: %.3f sec", ble_time_sec);
+                ESP_LOGI(TAG, "Queue rate: %.1f packets/sec", packets_per_sec);
+                ESP_LOGI(TAG, "Estimated queue throughput: %.2f kB/s", data_rate_kB);
 
-                ESP_LOGI(TAG, "Packet size: %d bytes", sizeof(ble_imu_pkt_t));
-                ESP_LOGI(TAG, "Total data: %.2f kB", (packets_sent * sizeof(ble_imu_pkt_t)) / 1024.0f);
+                ESP_LOGI(TAG, "Packet size: %d bytes", (int)sizeof(ble_imu_pkt_t));
+                ESP_LOGI(TAG, "Total queued data: %.2f kB",
+                         (packets_queued * sizeof(ble_imu_pkt_t)) / 1024.0f);
 
-                ESP_LOGI(TAG, "ACC overflow count: %lu", overflow_acc_count);
-                ESP_LOGI(TAG, "GYRO overflow count: %lu", overflow_gyro_count);
+                ESP_LOGI(TAG, "ACC overflow count: %lu", (unsigned long)overflow_acc_count);
+                ESP_LOGI(TAG, "GYRO overflow count: %lu", (unsigned long)overflow_gyro_count);
 
                 cooldown_counter = 0;
                 state = STATE_COOLDOWN;
-
                 break;
             }
 

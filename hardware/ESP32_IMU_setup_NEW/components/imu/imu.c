@@ -271,7 +271,7 @@ static uint8_t detect_impact(float acc_dynamic)
 
     peak_print_counter++;
     if (peak_print_counter >= 200) { // ca 1 sekund ved 200 Hz
-        ESP_LOGI("IMPACT_DEBUG", "energy_sum=%.2f  peak_1s=%.2f", energy_sum, energy_sum_peak);
+        //ESP_LOGI("IMPACT_DEBUG", "energy_sum=%.2f  peak_1s=%.2f", energy_sum, energy_sum_peak);
         energy_sum_peak = 0.0f;
 
         //ESP_LOGI("IMPACT_DEBUG", "E=%.2f peakE=%.2f  gyro=%.1f peakG=%.1f", energy_sum, energy_sum_peak, last_gyro_mag_dps, gyro_peak_1s);
@@ -316,7 +316,7 @@ static uint8_t detect_impact(float acc_dynamic)
     // log why it does not trigger impact
     if (energy_sum > IMPACT_THRESHOLD && dE <= IMPACT_RISE_THRESHOLD)
     {
-        ESP_LOGI("IMPACT_DEBUG", "Blocked by rise threshold: E=%.2f dE=%.2f", energy_sum, dE);
+        //ESP_LOGI("IMPACT_DEBUG", "Blocked by rise threshold: E=%.2f dE=%.2f", energy_sum, dE);
     }
 
 

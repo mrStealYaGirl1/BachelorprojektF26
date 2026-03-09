@@ -33,6 +33,16 @@ static uint16_t s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
 static uint16_t s_chr_val_handle = 0;
 static bool s_notify_enabled = false;
 
+/* interne fejlkoder til debug */
+#define BLE_NOTIFY_ERR_NOT_CONNECTED   (-1001)
+#define BLE_NOTIFY_ERR_NOTIFY_DISABLED (-1002)
+#define BLE_NOTIFY_ERR_BAD_HANDLE      (-1003)
+#define BLE_NOTIFY_ERR_NO_MBUF         (-1004)
+
+/* statistik */
+static uint32_t notify_ok_count = 0;
+static uint32_t notify_fail_count = 0;
+
 /* =========================================================
    FORWARD DECLARATIONS
 ========================================================= */
@@ -303,17 +313,21 @@ bool ble_manager_send_simple(uint32_t counter, uint32_t timestamp_ms)
 /* =========================================================
    NOTIFY API - IMU PKT
 ========================================================= */
-bool ble_manager_notify_imu_pkt(const ble_imu_pkt_t *pkt)
+int ble_manager_notify_imu_pkt_rc(const ble_imu_pkt_t *pkt)
 {
-    if (s_conn_handle == BLE_HS_CONN_HANDLE_NONE) return false;
-    if (!s_notify_enabled) return false;
-    if (s_chr_val_handle == 0) return false;
+    if (s_conn_handle == BLE_HS_CONN_HANDLE_NONE) return BLE_NOTIFY_ERR_NOT_CONNECTED;
+    if (!s_notify_enabled) return BLE_NOTIFY_ERR_NOTIFY_DISABLED;
+    if (s_chr_val_handle == 0) return BLE_NOTIFY_ERR_BAD_HANDLE;
 
     struct os_mbuf *om = ble_hs_mbuf_from_flat(pkt, sizeof(*pkt));
-    if (!om) return false;
+    if (!om) return BLE_NOTIFY_ERR_NO_MBUF;
 
-    int rc = ble_gatts_notify_custom(s_conn_handle, s_chr_val_handle, om);
-    return (rc == 0);
+    return ble_gatts_notify_custom(s_conn_handle, s_chr_val_handle, om);
+}
+
+bool ble_manager_notify_imu_pkt(const ble_imu_pkt_t *pkt)
+{
+    return (ble_manager_notify_imu_pkt_rc(pkt) == 0);
 }
 
 /* =========================================================
@@ -329,7 +343,23 @@ static void ble_imu_tx_task(void *arg)
 
     while (1) {
         if (xQueueReceive(s_imu_q, &pkt, portMAX_DELAY) == pdTRUE) {
-            (void)ble_manager_notify_imu_pkt(&pkt);
+
+            int rc = ble_manager_notify_imu_pkt_rc(&pkt);
+
+            if (rc == 0) {
+                notify_ok_count++;
+            } else {
+                notify_fail_count++;
+                ESP_LOGW(TAG,
+                         "BLE notify failed rc=%d event=%u seq_start=%u sample_count=%u",
+                         rc,
+                         pkt.event_id,
+                         pkt.samples[0].seq,
+                         pkt.sample_count);
+            }
+
+            /* pacing for BLE stability */
+            vTaskDelay(pdMS_TO_TICKS(18));
         }
     }
 }
@@ -338,7 +368,7 @@ void ble_manager_start_imu_tx_task(void)
 {
     if (s_imu_q) return;
 
-    s_imu_q = xQueueCreate(32, sizeof(ble_imu_pkt_t));
+    s_imu_q = xQueueCreate(128, sizeof(ble_imu_pkt_t));
     configASSERT(s_imu_q);
 
     xTaskCreate(ble_imu_tx_task, "ble_imu_tx", 4096, NULL, 6, &s_imu_tx_task);
@@ -348,4 +378,23 @@ bool ble_manager_send_imu_pkt(const ble_imu_pkt_t *pkt)
 {
     if (!s_imu_q) return false;
     return (xQueueSend(s_imu_q, pkt, pdMS_TO_TICKS(50)) == pdTRUE);
+}
+
+/* =========================================================
+   NOTIFY STATS
+========================================================= */
+void ble_manager_reset_notify_stats(void)
+{
+    notify_ok_count = 0;
+    notify_fail_count = 0;
+}
+
+uint32_t ble_manager_get_notify_ok_count(void)
+{
+    return notify_ok_count;
+}
+
+uint32_t ble_manager_get_notify_fail_count(void)
+{
+    return notify_fail_count;
 }
