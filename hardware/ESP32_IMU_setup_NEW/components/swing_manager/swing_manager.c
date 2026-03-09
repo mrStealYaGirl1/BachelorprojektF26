@@ -10,8 +10,8 @@
 static const char *TAG = "SWING";
 
 /* 200 Hz */
-#define PRE_SAMPLES    1000   // 5 sek
-#define POST_SAMPLES   600    // 3 sek
+#define PRE_SAMPLES    600   // 3 sek
+#define POST_SAMPLES   400    // 2 sek
 #define EVENT_SIZE     (PRE_SAMPLES + POST_SAMPLES)
 
 typedef enum {

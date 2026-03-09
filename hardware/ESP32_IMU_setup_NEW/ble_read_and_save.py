@@ -7,17 +7,25 @@ from bleak import BleakClient, BleakScanner
 DEVICE_NAME = "GOLF_IMU"
 CHAR_UUID = "99887766-5544-3322-1100-ffeeddccbbaa"
 
+# ===== BLE packet format =====
 BLE_IMU_SAMPLES_PER_PKT = 5
-PKT_HEADER_FMT = "<HH"
-SAMPLE_FMT = "<hhhhhhIH"
+PKT_HEADER_FMT = "<HH"     # event_id, sample_count
+SAMPLE_FMT = "<hhhhhhIH"   # ax ay az gx gy gz ts_ms seq
 
 PKT_HEADER_SIZE = struct.calcsize(PKT_HEADER_FMT)
 SAMPLE_SIZE = struct.calcsize(SAMPLE_FMT)
 PKT_SIZE = PKT_HEADER_SIZE + BLE_IMU_SAMPLES_PER_PKT * SAMPLE_SIZE
 
+# ===== Expected event size =====
+EXPECTED_SAMPLES_PER_EVENT = 1000
+
+# ===== Globals =====
 csv_file = None
 csv_writer = None
 csv_filename = None
+
+event_sample_counts = {}
+finished_events = set()
 
 
 def open_csv_file():
@@ -41,7 +49,7 @@ def close_csv_file():
     global csv_file
     if csv_file:
         csv_file.close()
-        print("CSV file closed.")
+        print(f"CSV file closed: {csv_filename}")
 
 
 def decode_packet(data: bytes):
@@ -61,20 +69,40 @@ def decode_packet(data: bytes):
 
 
 def process_sample(event_id, seq, ts_ms, ax, ay, az, gx, gy, gz):
-    global csv_writer
+    global csv_writer, event_sample_counts, finished_events
 
-    print(
-        f"EV:{event_id:3} SEQ:{seq:4} "
-        f"ACC_RAW: ({ax:6},{ay:6},{az:6}) "
-        f"GYR_RAW: ({gx:6},{gy:6},{gz:6}) "
-        f"| T:{ts_ms}"
-    )
+    # status-print hver 100. sample
+    if seq % 100 == 0:
+        print(f"EV:{event_id} SEQ:{seq} T:{ts_ms}")
 
+    # gem sample i CSV
     csv_writer.writerow([event_id, seq, ts_ms, ax, ay, az, gx, gy, gz])
+
+    # opret event hvis det ikke findes endnu
+    if event_id not in event_sample_counts:
+        event_sample_counts[event_id] = 0
+        print(f"Started receiving event {event_id}")
+
+    # tæl samples
+    event_sample_counts[event_id] += 1
+
+    # skriv når event er færdigt
+    if (
+        event_sample_counts[event_id] >= EXPECTED_SAMPLES_PER_EVENT
+        and event_id not in finished_events
+    ):
+        finished_events.add(event_id)
+        print(
+            f"Event {event_id} finished. "
+            f"Received {event_sample_counts[event_id]} samples."
+        )
 
 
 def notification_handler(sender, data):
-    decode_packet(data)
+    try:
+        decode_packet(data)
+    except Exception as e:
+        print(f"Error in notification handler: {e}")
 
 
 async def main():
@@ -96,17 +124,27 @@ async def main():
 
     print("Found device:", target.address)
 
-    async with BleakClient(target.address) as client:
-        print("Connected!")
-        await client.start_notify(CHAR_UUID, notification_handler)
+    try:
+        async with BleakClient(target.address) as client:
+            print("Connected!")
+            await client.start_notify(CHAR_UUID, notification_handler)
+            print("Notifications started. Waiting for data...")
 
-        try:
             while True:
                 await asyncio.sleep(1)
-        except KeyboardInterrupt:
-            print("Stopping...")
-        finally:
-            close_csv_file()
+
+    except KeyboardInterrupt:
+        print("Stopping by user...")
+
+    finally:
+        close_csv_file()
+
+        if event_sample_counts:
+            print("\nSummary:")
+            for event_id in sorted(event_sample_counts.keys()):
+                count = event_sample_counts[event_id]
+                status = "OK" if count >= EXPECTED_SAMPLES_PER_EVENT else "INCOMPLETE"
+                print(f"Event {event_id}: {count} samples ({status})")
 
 
 if __name__ == "__main__":

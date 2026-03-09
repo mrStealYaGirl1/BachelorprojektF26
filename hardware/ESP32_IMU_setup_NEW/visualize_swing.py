@@ -6,15 +6,17 @@ import matplotlib.pyplot as plt
 # =========================
 # INDSTILLINGER
 # =========================
-CSV_FILE = "golf_event.csv"   # skift hvis filen hedder noget andet
-
-# BMI270 settings
 ACC_RANGE_G = 2.0
 GYRO_RANGE_DPS = 2000.0
 RAW_MAX = 32768.0
 
-# vælg hvilken gyro-akse der bruges til simpel vinkelintegration
 ANGLE_AXIS = "gz"   # "gx", "gy" eller "gz"
+
+# Event setup fra ESP32
+PRE_SAMPLES = 600
+POST_SAMPLES = 400
+EXPECTED_SAMPLES = PRE_SAMPLES + POST_SAMPLES
+SAMPLE_RATE_HZ = 200.0
 
 # =========================
 # KONVERTERING
@@ -31,10 +33,8 @@ def raw_gyro_to_dps(raw):
 def remove_duplicate_samples(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
-    # Fjern helt identiske rækker
     df = df.drop_duplicates()
 
-    # Fjern samples hvor sensordata gentager sig lige efter hinanden
     same_as_prev = (
         (df["ax"] == df["ax"].shift()) &
         (df["ay"] == df["ay"].shift()) &
@@ -54,8 +54,13 @@ def remove_duplicate_samples(df: pd.DataFrame) -> pd.DataFrame:
 def prepare_data(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
-    # tid i sekunder relativt til start
-    df["t"] = (df["ts_ms"] - df["ts_ms"].iloc[0]) / 1000.0
+    # sorter efter seq for sikkerhed
+    df = df.sort_values("seq").reset_index(drop=True)
+
+    # tid ud fra sample-nummer relativt til impact
+    # seq 0 svarer til -3.0 s
+    # seq 600 svarer til 0.0 s
+    df["t"] = (df["seq"] - PRE_SAMPLES) / SAMPLE_RATE_HZ
     df["dt"] = df["t"].diff().fillna(0.0)
 
     # acceleration i g
@@ -86,16 +91,14 @@ def prepare_data(df: pd.DataFrame) -> pd.DataFrame:
 # MAIN
 # =========================
 def main():
-
     if len(sys.argv) < 2:
-        print("Brug: python visualize_golf.py <csv_fil>")
+        print("Brug: python visualize_swing.py <csv_fil>")
         return
 
-    CSV_FILE = sys.argv[1]
+    csv_file = sys.argv[1]
+    print(f"Indlæser fil: {csv_file}")
 
-    print(f"Indlæser fil: {CSV_FILE}")
-
-    df = pd.read_csv(CSV_FILE)
+    df = pd.read_csv(csv_file)
 
     print(f"Oprindelige samples: {len(df)}")
     df = remove_duplicate_samples(df)
@@ -103,7 +106,10 @@ def main():
 
     df = prepare_data(df)
 
-    # find peak for acc og gyro
+    # impact er ved seq = PRE_SAMPLES
+    impact_t = 0.0
+
+    # peaks
     acc_peak_idx = df["acc_mag_g"].idxmax()
     gyro_peak_idx = df["gyro_mag_dps"].idxmax()
 
@@ -117,10 +123,11 @@ def main():
 
     # --- Plot 1: Vinkel ---
     axes[0].plot(df["t"], df["angle_deg"], label=f"Vinkel fra {ANGLE_AXIS}", linewidth=1.5)
+    axes[0].axvline(impact_t, linestyle="-", linewidth=1.5, label="Impact (t=0)")
     axes[0].axvline(acc_peak_t, linestyle="--", linewidth=1, label="Peak acc")
     axes[0].axvline(gyro_peak_t, linestyle=":", linewidth=1, label="Peak gyro")
     axes[0].set_ylabel("Vinkel [deg]")
-    axes[0].set_title(f"Golf-event analyse ({CSV_FILE})")
+    axes[0].set_title(f"Golf-event analyse ({csv_file})")
     axes[0].grid(True)
     axes[0].legend()
 
@@ -129,6 +136,7 @@ def main():
     axes[1].plot(df["t"], df["gy_dps"], label="gy [dps]", linewidth=1)
     axes[1].plot(df["t"], df["gz_dps"], label="gz [dps]", linewidth=1)
     axes[1].plot(df["t"], df["gyro_mag_dps"], label="|gyro| [dps]", linewidth=2)
+    axes[1].axvline(impact_t, linestyle="-", linewidth=1.5, label="Impact (t=0)")
     axes[1].axvline(gyro_peak_t, linestyle=":", linewidth=1, label="Peak gyro")
     axes[1].set_ylabel("Gyro [dps]")
     axes[1].grid(True)
@@ -139,11 +147,15 @@ def main():
     axes[2].plot(df["t"], df["ay_g"], label="ay [g]", linewidth=1)
     axes[2].plot(df["t"], df["az_g"], label="az [g]", linewidth=1)
     axes[2].plot(df["t"], df["acc_mag_g"], label="|acc| [g]", linewidth=2)
+    axes[2].axvline(impact_t, linestyle="-", linewidth=1.5, label="Impact (t=0)")
     axes[2].axvline(acc_peak_t, linestyle="--", linewidth=1, label="Peak acc")
     axes[2].set_xlabel("Tid [s]")
     axes[2].set_ylabel("Acceleration [g]")
     axes[2].grid(True)
     axes[2].legend()
+
+    # fast x-akse så den matcher 1000 samples = 5 sek
+    axes[2].set_xlim(-PRE_SAMPLES / SAMPLE_RATE_HZ, POST_SAMPLES / SAMPLE_RATE_HZ)
 
     plt.tight_layout()
     plt.show()
