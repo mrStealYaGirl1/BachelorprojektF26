@@ -26,6 +26,7 @@ csv_filename = None
 
 event_sample_counts = {}
 finished_events = set()
+last_seq_per_event = {}
 
 
 def open_csv_file():
@@ -69,33 +70,32 @@ def decode_packet(data: bytes):
 
 
 def process_sample(event_id, seq, ts_ms, ax, ay, az, gx, gy, gz):
-    global csv_writer, event_sample_counts, finished_events
+    global csv_writer, event_sample_counts, finished_events, last_seq_per_event
 
-    # status-print hver 100. sample
+    if event_id not in event_sample_counts:
+        event_sample_counts[event_id] = 0
+        last_seq_per_event[event_id] = None
+        print(f"Started receiving event {event_id}")
+
+    last_seq = last_seq_per_event[event_id]
+    if last_seq is not None and seq != last_seq + 1:
+        print(f"GAP in event {event_id}: expected {last_seq + 1}, got {seq}")
+
+    last_seq_per_event[event_id] = seq
+
     if seq % 100 == 0:
         print(f"EV:{event_id} SEQ:{seq} T:{ts_ms}")
 
-    # gem sample i CSV
     csv_writer.writerow([event_id, seq, ts_ms, ax, ay, az, gx, gy, gz])
 
-    # opret event hvis det ikke findes endnu
-    if event_id not in event_sample_counts:
-        event_sample_counts[event_id] = 0
-        print(f"Started receiving event {event_id}")
-
-    # tæl samples
     event_sample_counts[event_id] += 1
 
-    # skriv når event er færdigt
     if (
         event_sample_counts[event_id] >= EXPECTED_SAMPLES_PER_EVENT
         and event_id not in finished_events
     ):
         finished_events.add(event_id)
-        print(
-            f"Event {event_id} finished. "
-            f"Received {event_sample_counts[event_id]} samples."
-        )
+        print(f"Event {event_id} finished. Received {event_sample_counts[event_id]} samples.")
 
 
 def notification_handler(sender, data):
