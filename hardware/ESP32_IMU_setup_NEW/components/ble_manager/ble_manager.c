@@ -43,6 +43,9 @@ static bool s_notify_enabled = false;
 static uint32_t notify_ok_count = 0;
 static uint32_t notify_fail_count = 0;
 
+/* IMU TX busy-status */
+static volatile uint32_t s_imu_tx_pending_pkts = 0;
+
 /* =========================================================
    FORWARD DECLARATIONS
 ========================================================= */
