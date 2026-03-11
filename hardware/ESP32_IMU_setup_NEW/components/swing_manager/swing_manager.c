@@ -30,23 +30,70 @@ static uint32_t post_counter = 0;
 static uint32_t cooldown_counter = 0;
 static uint8_t impact_pending = 0;
 
+// putt start detection
+static uint32_t event_start_index = 0;
+static uint8_t event_start_valid = 0;
+static uint32_t impact_offset_in_event = PRE_SAMPLES;
 
 void swing_manager_notify_impact(uint32_t index)
 {
     if (state == STATE_WAIT)
     {
         impact_index = index;
+
+        if (imu_putt_start_is_valid())
+        {
+            event_start_index = imu_get_putt_start_idx();
+            event_start_valid = 1;
+
+            ESP_LOGI(TAG, "Using detected putt-start idx=%lu for event start",
+                     (unsigned long)event_start_index);
+
+            imu_clear_putt_start();
+        }
+        else
+        {
+            event_start_valid = 0;
+            ESP_LOGI(TAG, "No putt-start detected, using fallback pre-trigger window");
+        }
+
         impact_pending = 1;
     }
 }
+
+// void swing_manager_notify_impact(uint32_t index)
+// {
+//     if (state == STATE_WAIT)
+//     {
+//         impact_index = index;
+//         impact_pending = 1;
+//     }
+// }
 
 
 static void copy_event_from_ringbuffer(void)
 {
     imu_ringbuffer_t *rb = imu_get_ringbuffer();
 
-    uint32_t start =
-        (impact_index + IMU_BUFFER_SIZE - PRE_SAMPLES) % IMU_BUFFER_SIZE;
+    uint32_t start;
+
+    if (event_start_valid)
+    {
+        start = event_start_index;
+    }
+    else
+    {
+        start = (impact_index + IMU_BUFFER_SIZE - PRE_SAMPLES) % IMU_BUFFER_SIZE;
+    }
+
+    impact_offset_in_event =
+        (impact_index + IMU_BUFFER_SIZE - start) % IMU_BUFFER_SIZE;
+
+    if (impact_offset_in_event >= EVENT_SIZE)
+    {
+        /* fallback safety */
+        impact_offset_in_event = PRE_SAMPLES;
+    }
 
     for (uint32_t i = 0; i < EVENT_SIZE; i++)
     {
@@ -54,6 +101,20 @@ static void copy_event_from_ringbuffer(void)
         swing_buffer[i] = rb->buffer[idx];
     }
 }
+
+// static void copy_event_from_ringbuffer(void)
+// {
+//     imu_ringbuffer_t *rb = imu_get_ringbuffer();
+
+//     uint32_t start =
+//         (impact_index + IMU_BUFFER_SIZE - PRE_SAMPLES) % IMU_BUFFER_SIZE;
+
+//     for (uint32_t i = 0; i < EVENT_SIZE; i++)
+//     {
+//         uint32_t idx = (start + i) % IMU_BUFFER_SIZE;
+//         swing_buffer[i] = rb->buffer[idx];
+//     }
+// }
 
 
 void swing_manager_task(void *pvParameters)
@@ -127,9 +188,12 @@ void swing_manager_task(void *pvParameters)
                                     (int)swing_buffer[i].gz);
                                 }
 
+                // int64_t t0 = swing_buffer[0].timestamp_us;
+                // int64_t tImpact = swing_buffer[PRE_SAMPLES].timestamp_us;
+                // int64_t tEnd = swing_buffer[EVENT_SIZE-1].timestamp_us;
                 int64_t t0 = swing_buffer[0].timestamp_us;
-                int64_t tImpact = swing_buffer[PRE_SAMPLES].timestamp_us;
-                int64_t tEnd = swing_buffer[EVENT_SIZE-1].timestamp_us;
+                int64_t tImpact = swing_buffer[impact_offset_in_event].timestamp_us;
+                int64_t tEnd = swing_buffer[EVENT_SIZE - 1].timestamp_us;
 
                 ESP_LOGI(TAG, "Pre duration:  %.3f sec", (tImpact - t0) / 1000000.0);
                 ESP_LOGI(TAG, "Post duration: %.3f sec", (tEnd - tImpact) / 1000000.0);
@@ -259,6 +323,9 @@ void swing_manager_task(void *pvParameters)
                 ESP_LOGI(TAG, "GYRO overflow count: %lu", (unsigned long)overflow_gyro_count);
 
                 cooldown_counter = 0;
+                event_start_valid = 0;
+                impact_offset_in_event = PRE_SAMPLES;
+                imu_reset_putt_start_detector();
                 state = STATE_COOLDOWN;
                 break;
             }
@@ -270,6 +337,8 @@ void swing_manager_task(void *pvParameters)
 
                 if (cooldown_counter >= 200) // 1 sekund
                 {
+                    event_start_valid = 0;
+                    impact_offset_in_event = PRE_SAMPLES;
                     state = STATE_WAIT;
                 }
 

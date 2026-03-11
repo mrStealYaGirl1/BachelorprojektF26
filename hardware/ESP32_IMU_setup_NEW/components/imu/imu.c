@@ -15,6 +15,7 @@
 
 static const char *TAG = "IMU";
 
+
 /* =====================================================
    RINGBUFFER
 ===================================================== */
@@ -42,6 +43,38 @@ static float last_gyro_mag_dps = 0.0f;
 static float prev_energy_sum = 0.0f;
 
 /* =====================================================
+   PUTT START DETECTION
+===================================================== */
+
+typedef enum {
+    PUTT_STATE_IDLE = 0,
+    PUTT_STATE_READY,
+    PUTT_STATE_POSSIBLE_START,
+    PUTT_STATE_IN_PUTT
+} putt_state_t;
+
+static putt_state_t s_putt_state = PUTT_STATE_IDLE;
+
+/* thresholds - startværdier, skal tunes med logs */
+#define PUTT_READY_GYRO_THRESHOLD_DPS      8.0f
+#define PUTT_READY_MIN_SAMPLES             80    // 0.4 s ved 200 Hz
+
+#define PUTT_START_GYRO_THRESHOLD_DPS      25.0f
+#define PUTT_START_MIN_SAMPLES             8     // 40 ms ved 200 Hz
+
+#define PUTT_CANCEL_GYRO_THRESHOLD_DPS     12.0f
+#define PUTT_MAX_DURATION_SAMPLES          400   // 2.0 s ved 200 Hz
+
+#define PUTT_START_PREBUFFER_SAMPLES       100   // 0.5 s før start
+
+static uint32_t s_putt_still_counter = 0;
+static uint32_t s_putt_start_counter = 0;
+static uint32_t s_putt_duration_counter = 0;
+
+static bool s_putt_start_valid = false;
+static uint32_t s_putt_start_idx = 0;
+
+/* =====================================================
    BIAS
 ===================================================== */
 
@@ -53,8 +86,18 @@ static float acc_bias_x = 0;
 static float acc_bias_y = 0;
 static float acc_bias_z = 0;
 
+
+
+/* =========================================================
+   FORWARD DECLARATIONS
+========================================================= */
+
 static void imu_calibrate(void);
 static uint8_t detect_impact(float acc_dynamic);
+
+static uint32_t rb_index_back(uint32_t index, uint32_t back);
+static uint8_t detect_putt_start(float gyro_mag_dps, uint32_t current_idx);
+static void reset_putt_start_detector(void);
 
 /* =====================================================
    SPI CONFIG
@@ -338,6 +381,15 @@ static void reset_impact_detector(void)
     peak_print_counter = 0;
 }
 
+// helper for indexing back in ringbuffer with wraparound
+static uint32_t rb_index_back(uint32_t index, uint32_t back)
+{
+    if (back <= index) {
+        return index - back;
+    }
+    return IMU_BUFFER_SIZE + index - back;
+}
+
 
 /* =====================================================
    TASK
@@ -348,8 +400,8 @@ void imu_task(void *pvParameters)
     struct bmi2_sens_data sensor_data;
     TickType_t last_wake_time = xTaskGetTickCount();
 
-    uint32_t counter = 0;
-    TickType_t last_send = xTaskGetTickCount();
+    // uint32_t counter = 0;
+    // TickType_t last_send = xTaskGetTickCount();
 
     while (1)
     {
@@ -391,6 +443,7 @@ void imu_task(void *pvParameters)
                 if (!ble_was_busy) {
                     ESP_LOGI(TAG, "Ignoring impacts while BLE IMU TX is busy");
                     reset_impact_detector();
+                    reset_putt_start_detector();
                 }
 
                 ble_was_busy = true;
@@ -398,20 +451,42 @@ void imu_task(void *pvParameters)
             else
             {
                 if (ble_was_busy) {
-                    ESP_LOGI(TAG, "BLE IMU TX finished, impact detection enabled again");
+                    ESP_LOGI(TAG, "BLE IMU TX finished, impact/start detection enabled again");
                     reset_impact_detector();
+                    reset_putt_start_detector();
                     ble_was_busy = false;
                 }
 
+                uint32_t current_idx = (imu_rb.write_index == 0)
+                                    ? (IMU_BUFFER_SIZE - 1)
+                                    : (imu_rb.write_index - 1);
+
+                /* forsøg at finde putt-start */
+                (void)detect_putt_start(last_gyro_mag_dps, current_idx);
+
+                /* impact bekræfter det rigtige event */
                 if (detect_impact(acc_dynamic))
                 {
-                    uint32_t idx = (imu_rb.write_index == 0)
-                                ? (IMU_BUFFER_SIZE - 1)
-                                : (imu_rb.write_index - 1);
-
-                    swing_manager_notify_impact(idx);
+                    swing_manager_notify_impact(current_idx);
                 }
             }
+            // else
+            // {
+            //     if (ble_was_busy) {
+            //         ESP_LOGI(TAG, "BLE IMU TX finished, impact detection enabled again");
+            //         reset_impact_detector();
+            //         ble_was_busy = false;
+            //     }
+
+            //     if (detect_impact(acc_dynamic))
+            //     {
+            //         uint32_t idx = (imu_rb.write_index == 0)
+            //                     ? (IMU_BUFFER_SIZE - 1)
+            //                     : (imu_rb.write_index - 1);
+
+            //         swing_manager_notify_impact(idx);
+            //     }
+            // }
 
 
 
@@ -456,4 +531,121 @@ void imu_ringbuffer_push(const imu_sample_t *sample)
 imu_ringbuffer_t* imu_get_ringbuffer(void)
 {
     return &imu_rb;
+}
+
+
+
+
+
+
+static uint8_t detect_putt_start(float gyro_mag_dps, uint32_t current_idx)
+{
+    switch (s_putt_state)
+    {
+        case PUTT_STATE_IDLE:
+        {
+            if (gyro_mag_dps < PUTT_READY_GYRO_THRESHOLD_DPS) {
+                s_putt_still_counter++;
+            } else {
+                s_putt_still_counter = 0;
+            }
+
+            if (s_putt_still_counter >= PUTT_READY_MIN_SAMPLES) {
+                s_putt_state = PUTT_STATE_READY;
+                s_putt_start_counter = 0;
+                s_putt_duration_counter = 0;
+                // ESP_LOGI(TAG, "PUTT_READY");
+            }
+            break;
+        }
+
+        case PUTT_STATE_READY:
+        {
+            /* hvis køllen ikke længere er stille, men heller ikke rigtig starter,
+               så bliv i READY så længe det ikke er voldsom bevægelse */
+            if (gyro_mag_dps > PUTT_START_GYRO_THRESHOLD_DPS) {
+                s_putt_state = PUTT_STATE_POSSIBLE_START;
+                s_putt_start_counter = 1;
+            } else if (gyro_mag_dps < PUTT_READY_GYRO_THRESHOLD_DPS) {
+                /* stadig rolig */
+            } else {
+                /* lidt småbevægelse, men ikke nok til start */
+            }
+            break;
+        }
+
+        case PUTT_STATE_POSSIBLE_START:
+        {
+            if (gyro_mag_dps > PUTT_START_GYRO_THRESHOLD_DPS) {
+                s_putt_start_counter++;
+
+                if (s_putt_start_counter >= PUTT_START_MIN_SAMPLES) {
+                    s_putt_start_idx = rb_index_back(current_idx, PUTT_START_PREBUFFER_SAMPLES);
+                    s_putt_start_valid = true;
+                    s_putt_state = PUTT_STATE_IN_PUTT;
+                    s_putt_duration_counter = 0;
+
+                    ESP_LOGI(TAG, "PUTT START detected at idx=%lu (event start idx=%lu)",
+                             (unsigned long)current_idx,
+                             (unsigned long)s_putt_start_idx);
+                    return 1;
+                }
+            } else if (gyro_mag_dps < PUTT_CANCEL_GYRO_THRESHOLD_DPS) {
+                /* falsk alarm -> tilbage til READY */
+                s_putt_state = PUTT_STATE_READY;
+                s_putt_start_counter = 0;
+            }
+            break;
+        }
+
+        case PUTT_STATE_IN_PUTT:
+        {
+            s_putt_duration_counter++;
+
+            /* timeout hvis vi aldrig får impact */
+            if (s_putt_duration_counter > PUTT_MAX_DURATION_SAMPLES) {
+                ESP_LOGI(TAG, "PUTT start timeout -> reset");
+                reset_putt_start_detector();
+            }
+            break;
+        }
+
+        default:
+            reset_putt_start_detector();
+            break;
+    }
+
+    return 0;
+}
+
+
+static void reset_putt_start_detector(void)
+{
+    s_putt_state = PUTT_STATE_IDLE;
+    s_putt_still_counter = 0;
+    s_putt_start_counter = 0;
+    s_putt_duration_counter = 0;
+    s_putt_start_valid = false;
+    s_putt_start_idx = 0;
+}
+
+bool imu_putt_start_is_valid(void)
+{
+    return s_putt_start_valid;
+}
+
+uint32_t imu_get_putt_start_idx(void)
+{
+    return s_putt_start_idx;
+}
+
+void imu_clear_putt_start(void)
+{
+    s_putt_start_valid = false;
+    s_putt_start_idx = 0;
+}
+
+void imu_reset_putt_start_detector(void)
+{
+    reset_putt_start_detector();
 }
