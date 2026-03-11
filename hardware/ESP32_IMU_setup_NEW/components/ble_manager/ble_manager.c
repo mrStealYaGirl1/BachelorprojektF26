@@ -44,7 +44,7 @@ static uint32_t notify_ok_count = 0;
 static uint32_t notify_fail_count = 0;
 
 /* IMU TX busy-status */
-static volatile uint32_t s_imu_tx_pending_pkts = 0;
+static volatile bool s_imu_tx_active = false;
 
 /* =========================================================
    FORWARD DECLARATIONS
@@ -363,6 +363,8 @@ static void ble_imu_tx_task(void *arg)
 
             /* pacing for BLE stability */
             vTaskDelay(pdMS_TO_TICKS(18));
+
+            s_imu_tx_active = false;    
         }
     }
 }
@@ -400,4 +402,11 @@ uint32_t ble_manager_get_notify_ok_count(void)
 uint32_t ble_manager_get_notify_fail_count(void)
 {
     return notify_fail_count;
+}
+
+bool ble_manager_is_imu_tx_busy(void)
+{
+    if (!s_imu_q) return false;
+
+    return (s_imu_tx_active || uxQueueMessagesWaiting(s_imu_q) > 0);
 }

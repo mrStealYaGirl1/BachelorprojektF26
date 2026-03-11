@@ -324,6 +324,22 @@ static uint8_t detect_impact(float acc_dynamic)
 }
 
 /* =====================================================
+   RESET IMPACT DETECTOR
+===================================================== */
+
+static void reset_impact_detector(void)
+{
+    memset(energy_buffer, 0, sizeof(energy_buffer));
+    energy_index = 0;
+    energy_sum = 0.0f;
+    prev_energy_sum = 0.0f;
+    cooldown_counter = 0;
+    energy_sum_peak = 0.0f;
+    peak_print_counter = 0;
+}
+
+
+/* =====================================================
    TASK
 ===================================================== */
 
@@ -365,14 +381,49 @@ void imu_task(void *pvParameters)
 
             last_gyro_mag_dps = sqrtf(gx_dps*gx_dps + gy_dps*gy_dps + gz_dps*gz_dps);
 
-            if (detect_impact(acc_dynamic))
-            {
-                uint32_t idx = (imu_rb.write_index == 0)
-                               ? (IMU_BUFFER_SIZE - 1)
-                               : (imu_rb.write_index - 1);
+            static bool ble_was_busy = false;
 
-                swing_manager_notify_impact(idx);
+
+            // Check if BLE is busy with IMU TX - if so, ignore impacts and reset detector when BLE is free again
+            bool ble_busy = ble_manager_is_imu_tx_busy();
+            if (ble_busy)
+            {
+                if (!ble_was_busy) {
+                    ESP_LOGI(TAG, "Ignoring impacts while BLE IMU TX is busy");
+                    reset_impact_detector();
+                }
+
+                ble_was_busy = true;
             }
+            else
+            {
+                if (ble_was_busy) {
+                    ESP_LOGI(TAG, "BLE IMU TX finished, impact detection enabled again");
+                    reset_impact_detector();
+                    ble_was_busy = false;
+                }
+
+                if (detect_impact(acc_dynamic))
+                {
+                    uint32_t idx = (imu_rb.write_index == 0)
+                                ? (IMU_BUFFER_SIZE - 1)
+                                : (imu_rb.write_index - 1);
+
+                    swing_manager_notify_impact(idx);
+                }
+            }
+
+
+
+
+            // if (detect_impact(acc_dynamic))
+            // {
+            //     uint32_t idx = (imu_rb.write_index == 0)
+            //                    ? (IMU_BUFFER_SIZE - 1)
+            //                    : (imu_rb.write_index - 1);
+
+            //     swing_manager_notify_impact(idx);
+            // }
         }
 
         vTaskDelayUntil(&last_wake_time, pdMS_TO_TICKS(5)); // 200 Hz --- FreeRTOS changed to 1000 Hz (100 Hz before)

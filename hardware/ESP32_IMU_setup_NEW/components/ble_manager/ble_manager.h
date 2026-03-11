@@ -42,3 +42,4 @@ bool ble_manager_send_imu_pkt(const ble_imu_pkt_t *pkt);
 void ble_manager_reset_notify_stats(void);
 uint32_t ble_manager_get_notify_ok_count(void);
 uint32_t ble_manager_get_notify_fail_count(void);
+bool ble_manager_is_imu_tx_busy(void);
