@@ -1,12 +1,26 @@
-import { Tabs } from "expo-router";
-import { View, Text, Dimensions } from "react-native";
+import { Redirect, Tabs } from "expo-router";
+import { ActivityIndicator, View, Text, Dimensions } from "react-native";
 import React from "react";
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { useAuth } from "../../providers/AuthProvider";
 
-const { width, height } = Dimensions.get("window");
+const { width } = Dimensions.get("window");
 
 
 export default function TabsLayout() {
+  const { session, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator />
+      </View>
+    );
+  }
+
+  if (!session) {
+    return <Redirect href="/(auth)" />;
+  }
   
   return (
     <Tabs screenOptions={{
@@ -14,7 +28,6 @@ export default function TabsLayout() {
       tabBarShowLabel: false,
       tabBarStyle: {
         position: 'absolute',
-         
         left: 16,
         right: 16,
         height: 99,
