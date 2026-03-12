@@ -25,6 +25,7 @@ static swing_state_t state = STATE_WAIT;
 
 static imu_sample_t swing_buffer[EVENT_SIZE];
 
+static uint32_t event_impact_index = 0;
 static uint32_t impact_index = 0;
 static uint32_t post_counter = 0;
 static uint32_t cooldown_counter = 0;
@@ -46,7 +47,7 @@ static void copy_event_from_ringbuffer(void)
     imu_ringbuffer_t *rb = imu_get_ringbuffer();
 
     uint32_t start =
-        (impact_index + IMU_BUFFER_SIZE - PRE_SAMPLES) % IMU_BUFFER_SIZE;
+    (   event_impact_index + IMU_BUFFER_SIZE - PRE_SAMPLES) % IMU_BUFFER_SIZE;
 
     for (uint32_t i = 0; i < EVENT_SIZE; i++)
     {
@@ -70,10 +71,16 @@ void swing_manager_task(void *pvParameters)
                 if (impact_pending)
                 {
                     impact_pending = 0;
+
+                    event_impact_index = impact_index;   // lås index til dette event
+
                     post_counter = 0;
+                    cooldown_counter = 0;
+
                     state = STATE_CAPTURE_POST;
 
                     ESP_LOGI(TAG, "Impact event started");
+                    ESP_LOGI(TAG, "Impact index: %lu", (unsigned long)event_impact_index);
                 }
 
                 break;
@@ -83,14 +90,14 @@ void swing_manager_task(void *pvParameters)
 
                 post_counter++;
 
-                if (post_counter >= POST_SAMPLES)
-                {
-                    copy_event_from_ringbuffer();
-                    state = STATE_PROCESS;
-                }
+            if (post_counter >= POST_SAMPLES)
+            {
+                post_counter = 0;
+                copy_event_from_ringbuffer();
+                state = STATE_PROCESS;
+            }
 
                 break;
-
 
             case STATE_PROCESS:
             {

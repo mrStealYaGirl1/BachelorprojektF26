@@ -29,6 +29,19 @@ static imu_ringbuffer_t imu_rb;
 #define IMPACT_THRESHOLD          20.0f
 #define IMPACT_COOLDOWN_SAMPLES   200   // 1 sekund ved 200 Hz
 
+typedef enum
+{
+    SWING_IDLE,
+    SWING_ADDRESS,
+    SWING_BACKSWING,
+    SWING_FORWARD,
+    SWING_FOLLOW
+} swing_state_t;
+
+static swing_state_t swing_state = SWING_IDLE;
+static uint32_t still_counter = 0;
+static uint32_t forward_counter = 0;
+
 static float energy_buffer[IMPACT_ENERGY_WINDOW] = {0};
 static uint8_t energy_index = 0;
 static float energy_sum = 0;
@@ -54,7 +67,7 @@ static float acc_bias_y = 0;
 static float acc_bias_z = 0;
 
 static void imu_calibrate(void);
-static uint8_t detect_impact(float acc_dynamic);
+static uint8_t detect_swing(float acc_dynamic, float gyro_mag);
 
 /* =====================================================
    SPI CONFIG
@@ -253,72 +266,141 @@ static float energy_sum_peak = 0.0f;
 static uint32_t peak_print_counter = 0;
 //static float gyro_peak_1s = 0.0f;
 
-static uint8_t detect_impact(float acc_dynamic)
+static uint8_t detect_swing(float acc_dynamic, float gyro_mag)
 {
-    float energy = acc_dynamic * acc_dynamic;
+    /*
+       Denne funktion implementerer swing state machine.
+       Den bruger både gyro (rotation) og impact-detektor (energy spike).
+    */
 
-    energy_sum -= energy_buffer[energy_index];
-    energy_buffer[energy_index] = energy;
-    energy_sum += energy;
-
-    float dE = energy_sum - prev_energy_sum;    // delta Energy for spike detection - ændring i energi fra én sample til den næste. (ryk => dE moderat (energi bygger op over flere samples), slag => dE stor (energi ændrer sig meget på kort tid))
-    prev_energy_sum = energy_sum;
-
-
-    if (energy_sum > energy_sum_peak) energy_sum_peak = energy_sum;
-    //if (last_gyro_mag_dps > gyro_peak_1s) gyro_peak_1s = last_gyro_mag_dps;
-
-
-    peak_print_counter++;
-    if (peak_print_counter >= 200) { // ca 1 sekund ved 200 Hz
-        //ESP_LOGI("IMPACT_DEBUG", "energy_sum=%.2f  peak_1s=%.2f", energy_sum, energy_sum_peak);
-        energy_sum_peak = 0.0f;
-
-        //ESP_LOGI("IMPACT_DEBUG", "E=%.2f peakE=%.2f  gyro=%.1f peakG=%.1f", energy_sum, energy_sum_peak, last_gyro_mag_dps, gyro_peak_1s);
-        //gyro_peak_1s = 0.0f;
-
-        peak_print_counter = 0;
-    }
-
-
-
-    energy_index = (energy_index + 1) % IMPACT_ENERGY_WINDOW;
-
-    //ESP_LOGI("IMPACT_DEBUG", "energy_sum=%.2f", energy_sum);
-
-    if (cooldown_counter > 0)
+    switch (swing_state)
     {
-        cooldown_counter--;
-        return 0;
+
+        /* -----------------------------------------
+           SWING_IDLE
+           Køllen er i ro
+        ----------------------------------------- */
+
+        case SWING_IDLE:
+
+            /* Hvis rotation næsten er nul → køllen står stille */
+            if (gyro_mag < 5.0f)
+                still_counter++;
+            else
+                still_counter = 0;
+
+            /* Hvis køllen har været stille i 0.5 sek → ADDRESS */
+            if (still_counter > 100)
+            {
+                swing_state = SWING_ADDRESS;
+                still_counter = 0;
+                forward_counter = 0;
+                ESP_LOGI("SWING", "ADDRESS detected");
+            }
+
+        break;
+
+
+        /* -----------------------------------------
+           SWING_ADDRESS
+           Spilleren står klar
+        ----------------------------------------- */
+
+        case SWING_ADDRESS:
+
+            /* Hvis rotation bliver større → BACKSWING */
+            if (gyro_mag > 20.0f)
+            {
+                swing_state = SWING_BACKSWING;
+                ESP_LOGI("SWING", "BACKSWING");
+            }
+
+        break;
+
+
+        /* -----------------------------------------
+           SWING_BACKSWING
+           Køllen trækkes bagud
+        ----------------------------------------- */
+
+        case SWING_BACKSWING:
+
+            /* Når rotation bliver endnu større → FORWARD */
+            if (gyro_mag > 40.0f)
+            {
+                swing_state = SWING_FORWARD;
+                forward_counter = 0;
+                ESP_LOGI("SWING", "FORWARD");
+            }
+
+            /* Hvis bevægelsen stopper → reset */
+            if (gyro_mag < 5.0f)
+                swing_state = SWING_IDLE;
+
+        break;
+
+
+        /* -----------------------------------------
+           SWING_FORWARD
+           Køllen accelererer frem mod bolden
+        ----------------------------------------- */
+
+        case SWING_FORWARD:
+        {
+
+            forward_counter++;
+
+            /*
+               Her bruger vi den eksisterende impact-detektor
+               baseret på energy + dE spike
+            */
+
+            float energy = acc_dynamic * acc_dynamic;
+
+            energy_sum -= energy_buffer[energy_index];
+            energy_buffer[energy_index] = energy;
+            energy_sum += energy;
+
+            float dE = energy_sum - prev_energy_sum;
+            prev_energy_sum = energy_sum;
+
+            energy_index = (energy_index + 1) % IMPACT_ENERGY_WINDOW;
+
+            if (cooldown_counter > 0)
+            {
+                cooldown_counter--;
+                break;
+            }
+
+            if (energy_sum > IMPACT_THRESHOLD && dE > IMPACT_RISE_THRESHOLD)
+            {
+                ESP_LOGW("IMPACT_DEBUG", "IMPACT! E=%.2f dE=%.2f", energy_sum, dE);
+
+                cooldown_counter = IMPACT_COOLDOWN_SAMPLES;
+                swing_state = SWING_FOLLOW;
+
+                return 1;
+            }
+
+            if (forward_counter > 200)
+                swing_state = SWING_IDLE;
+
+            break;
+        }
+
+        /* -----------------------------------------
+           SWING_FOLLOW
+           Efter slaget
+        ----------------------------------------- */
+
+        case SWING_FOLLOW:
+
+            /* Når rotation falder igen → reset */
+            if (gyro_mag < 5.0f)
+                swing_state = SWING_IDLE;
+
+        break;
     }
-
-    // if (energy_sum > IMPACT_THRESHOLD)
-    // {
-    //     ESP_LOGW("IMPACT_DEBUG", "IMPACT! energy_sum=%.2f", energy_sum);
-    //     cooldown_counter = IMPACT_COOLDOWN_SAMPLES;
-    //     return 1;
-    // }
-
-    // if (energy_sum > IMPACT_THRESHOLD && last_gyro_mag_dps > GYRO_GATE_THRESHOLD_DPS)
-    // {
-    //     ESP_LOGW("IMPACT_DEBUG", "IMPACT! E=%.2f gyro=%.1f dps", energy_sum, last_gyro_mag_dps);
-    //     cooldown_counter = IMPACT_COOLDOWN_SAMPLES;
-    //     return 1;
-    // }
-    if (energy_sum > IMPACT_THRESHOLD && dE > IMPACT_RISE_THRESHOLD)
-{
-    ESP_LOGW("IMPACT_DEBUG", "IMPACT! E=%.2f dE=%.2f", energy_sum, dE);
-    cooldown_counter = IMPACT_COOLDOWN_SAMPLES;
-    return 1;
-}
-
-
-    // log why it does not trigger impact
-    if (energy_sum > IMPACT_THRESHOLD && dE <= IMPACT_RISE_THRESHOLD)
-    {
-        //ESP_LOGI("IMPACT_DEBUG", "Blocked by rise threshold: E=%.2f dE=%.2f", energy_sum, dE);
-    }
-
 
     return 0;
 }
@@ -403,7 +485,7 @@ void imu_task(void *pvParameters)
                     ble_was_busy = false;
                 }
 
-                if (detect_impact(acc_dynamic))
+                if (detect_swing(acc_dynamic, last_gyro_mag_dps))
                 {
                     uint32_t idx = (imu_rb.write_index == 0)
                                 ? (IMU_BUFFER_SIZE - 1)
