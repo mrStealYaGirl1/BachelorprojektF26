@@ -207,32 +207,6 @@ void swing_manager_task(void *pvParameters)
 
                 uint16_t seq = 0;
 
-                
-                    /* -------- EVENT META -------- */
-                    ble_event_meta_pkt_t meta;
-                    meta.pkt_type = BLE_PKT_TYPE_META;
-                    meta.event_id = event_id;
-                    meta.total_samples = EVENT_SIZE;
-                    meta.putt_start_valid = event_start_valid ? 1 : 0;
-                    meta.impact_seq = (uint16_t)impact_offset_in_event;
-
-                    bool meta_sent = ble_manager_send_event_meta(&meta);
-                    if (!meta_sent)
-                    {
-                        ESP_LOGW(TAG, "Event metadata notify failed for event=%u", event_id);
-                    }
-                    else
-                    {
-                        ESP_LOGI(TAG,
-                                "Event metadata sent: event=%u total=%u putt_start_valid=%u impact_seq=%u",
-                                event_id,
-                                meta.total_samples,
-                                meta.putt_start_valid,
-                                meta.impact_seq);
-                    }
-
-
-
                 int64_t ble_start_us = esp_timer_get_time();
                 uint32_t packets_queued = 0;
                 uint32_t queue_drop_count = 0;
@@ -247,7 +221,6 @@ void swing_manager_task(void *pvParameters)
                  for (uint32_t i = 0; i < EVENT_SIZE; i += BLE_IMU_SAMPLES_PER_PKT)
                 {
                     ble_imu_pkt_t pkt;
-                    pkt.pkt_type = BLE_PKT_TYPE_IMU;
                     pkt.event_id = event_id;
                     pkt.sample_count = 0;
 

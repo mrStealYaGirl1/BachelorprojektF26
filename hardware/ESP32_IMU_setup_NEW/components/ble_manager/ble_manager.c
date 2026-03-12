@@ -333,34 +333,6 @@ bool ble_manager_notify_imu_pkt(const ble_imu_pkt_t *pkt)
     return (ble_manager_notify_imu_pkt_rc(pkt) == 0);
 }
 
-
-
-/* =========================================================
-   NOTIFY API - EVENT META
-========================================================= */
-int ble_manager_notify_event_meta_rc(const ble_event_meta_pkt_t *pkt)       // first version (Metadata-pakken er lille og sendes kun én gang pr. event, så I behøver ikke nødvendigvis en separat queue til den endnu.)
-{
-    if (s_conn_handle == BLE_HS_CONN_HANDLE_NONE) return BLE_NOTIFY_ERR_NOT_CONNECTED;
-    if (!s_notify_enabled) return BLE_NOTIFY_ERR_NOTIFY_DISABLED;
-    if (s_chr_val_handle == 0) return BLE_NOTIFY_ERR_BAD_HANDLE;
-
-    struct os_mbuf *om = ble_hs_mbuf_from_flat(pkt, sizeof(*pkt));
-    if (!om) return BLE_NOTIFY_ERR_NO_MBUF;
-
-    return ble_gatts_notify_custom(s_conn_handle, s_chr_val_handle, om);
-}
-
-bool ble_manager_notify_event_meta(const ble_event_meta_pkt_t *pkt)
-{
-    return (ble_manager_notify_event_meta_rc(pkt) == 0);
-}
-
-bool ble_manager_send_event_meta(const ble_event_meta_pkt_t *pkt)
-{
-    /* send direkte - én lille pakke pr. event */
-    return ble_manager_notify_event_meta(pkt);
-}
-
 /* =========================================================
    IMU TX TASK
 ========================================================= */

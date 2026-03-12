@@ -3,17 +3,6 @@
 #include <stdbool.h>
 
 #define BLE_IMU_SAMPLES_PER_PKT 5
-#define BLE_PKT_TYPE_META 1
-#define BLE_PKT_TYPE_IMU  2
-
-typedef struct __attribute__((packed))
-{
-    uint8_t  pkt_type;          // BLE_PKT_TYPE_META
-    uint16_t event_id;
-    uint16_t total_samples;
-    uint8_t  putt_start_valid;  // 1 = event starter ved detekteret putt-start
-    uint16_t impact_seq;        // impact offset i eventet
-} ble_event_meta_pkt_t;
 
 typedef struct __attribute__((packed))
 {
@@ -31,9 +20,8 @@ typedef struct __attribute__((packed))
 
 typedef struct __attribute__((packed))
 {
-    uint8_t pkt_type;           // BLE_PKT_TYPE_IMU
     uint16_t event_id;
-    uint16_t sample_count;      // hvor mange samples er gyldige i denne pakke
+    uint16_t sample_count;   // hvor mange samples er gyldige i denne pakke
     ble_imu_sample_t samples[BLE_IMU_SAMPLES_PER_PKT];
 } ble_imu_pkt_t;
 
@@ -55,7 +43,3 @@ void ble_manager_reset_notify_stats(void);
 uint32_t ble_manager_get_notify_ok_count(void);
 uint32_t ble_manager_get_notify_fail_count(void);
 bool ble_manager_is_imu_tx_busy(void);
-
-bool ble_manager_notify_event_meta(const ble_event_meta_pkt_t *pkt);
-int ble_manager_notify_event_meta_rc(const ble_event_meta_pkt_t *pkt);
-bool ble_manager_send_event_meta(const ble_event_meta_pkt_t *pkt);
