@@ -2,7 +2,7 @@
 CONFIG_FREERTOS_HZ=1000
 
 # --- Flash size (ESP32-S3 board har 8MB flash) ---
-ESPTOOLPY_FLASHSIZE_8MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
 
 # --- Bluetooth / NimBLE ---
 CONFIG_BT_ENABLED=y

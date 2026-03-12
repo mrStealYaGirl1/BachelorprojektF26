@@ -347,11 +347,7 @@ static void ble_imu_tx_task(void *arg)
     while (1) {
         if (xQueueReceive(s_imu_q, &pkt, portMAX_DELAY) == pdTRUE) {
 
-             s_imu_tx_active = true;
-            
             int rc = ble_manager_notify_imu_pkt_rc(&pkt);
-
-           
 
             if (rc == 0) {
                 notify_ok_count++;

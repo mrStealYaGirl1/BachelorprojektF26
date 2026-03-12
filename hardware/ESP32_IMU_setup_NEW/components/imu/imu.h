@@ -1,7 +1,7 @@
+#pragma once
 #ifndef IMU_H
 #define IMU_H
 
-#include <stdbool.h>
 #include <stdint.h>
 #include "freertos/FreeRTOS.h"
 
@@ -100,14 +100,5 @@ void imu_task(void *pvParameters);
 void imu_ringbuffer_init(void);
 void imu_ringbuffer_push(const imu_sample_t *sample);
 imu_ringbuffer_t* imu_get_ringbuffer(void);
-
-
-/* =====================================================
-   PUTT START DETECTION API
-===================================================== */
-bool imu_putt_start_is_valid(void);
-uint32_t imu_get_putt_start_idx(void);
-void imu_clear_putt_start(void);
-void imu_reset_putt_start_detector(void);
 
 #endif
