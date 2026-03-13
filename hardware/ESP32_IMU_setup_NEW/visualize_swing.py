@@ -242,7 +242,7 @@ def main():
 
     plt.figure(figsize=(10,3))
     plt.plot(df["t"], df["state_num"])
-    plt.title("Swing state")
+    plt.title(f"Swing state ({csv_file})")
     plt.xlabel("time")
     plt.ylabel("state")
     plt.show()
@@ -294,8 +294,9 @@ def main():
     axes[0].axvline(gyro_peak_t,color="gray",linestyle=":")
 
     axes[0].set_ylabel("Angle [deg]")
+    axes[0].set_title(f"Golf-event analyse ({csv_file})")
     axes[0].grid(True)
-    axes[0].legend()
+    axes[0].legend(loc="upper right")
 
     # GYRO
 
@@ -308,7 +309,7 @@ def main():
 
     axes[1].set_ylabel("Gyro [dps]")
     axes[1].grid(True)
-    axes[1].legend()
+    axes[1].legend(loc="upper right")
 
     # ACC
 
@@ -324,7 +325,7 @@ def main():
     axes[2].set_xlabel("Tid [s]")
     axes[2].set_ylabel("Acceleration [g]")
     axes[2].grid(True)
-    axes[2].legend()
+    axes[2].legend(loc="upper right")
 
     axes[2].set_xlim(-PRE_SAMPLES / SAMPLE_RATE_HZ, POST_SAMPLES / SAMPLE_RATE_HZ)
 
