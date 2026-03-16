@@ -53,6 +53,11 @@ static float last_gyro_mag_dps = 0.0f;
 //spike detection
 #define IMPACT_RISE_THRESHOLD  27.0f   // startværdi, tune via log
 static float prev_energy_sum = 0.0f;
+//current swing timing
+static swing_timing_t current_swing = {0};
+static uint32_t next_swing_id = 1;
+static float forward_peak_energy = 0.0f;
+static uint32_t forward_peak_idx = 0;
 
 /* =====================================================
    BIAS
@@ -67,7 +72,10 @@ static float acc_bias_y = 0;
 static float acc_bias_z = 0;
 
 static void imu_calibrate(void);
-static uint8_t detect_swing(float acc_dynamic, float gyro_mag);
+static void reset_current_swing(void);
+static uint8_t detect_swing(float acc_dynamic,
+                            float gyro_mag,
+                            uint32_t sample_idx);
 
 /* =====================================================
    SPI CONFIG
@@ -266,7 +274,7 @@ static float energy_sum_peak = 0.0f;
 static uint32_t peak_print_counter = 0;
 //static float gyro_peak_1s = 0.0f;
 
-static uint8_t detect_swing(float acc_dynamic, float gyro_mag)
+static uint8_t detect_swing(float acc_dynamic, float gyro_mag,  uint32_t sample_idx)
 {
     /*
        Denne funktion implementerer swing state machine.
@@ -295,6 +303,12 @@ static uint8_t detect_swing(float acc_dynamic, float gyro_mag)
                 swing_state = SWING_ADDRESS;
                 still_counter = 0;
                 forward_counter = 0;
+
+                reset_current_swing();
+                current_swing.swing_id = next_swing_id++;
+                current_swing.address_start_us = imu_rb.buffer[sample_idx].timestamp_us;
+                current_swing.address_start_idx = sample_idx;  
+                
                 ESP_LOGI("SWING", "ADDRESS detected");
             }
 
@@ -312,6 +326,10 @@ static uint8_t detect_swing(float acc_dynamic, float gyro_mag)
             if (gyro_mag > 20.0f)
             {
                 swing_state = SWING_BACKSWING;
+
+                current_swing.backswing_start_us = imu_rb.buffer[sample_idx].timestamp_us;
+                current_swing.backswing_start_idx = sample_idx;
+
                 ESP_LOGI("SWING", "BACKSWING");
             }
 
@@ -330,13 +348,22 @@ static uint8_t detect_swing(float acc_dynamic, float gyro_mag)
             {
                 swing_state = SWING_FORWARD;
                 forward_counter = 0;
+
+                current_swing.forward_start_us = imu_rb.buffer[sample_idx].timestamp_us;
+                current_swing.forward_start_idx = sample_idx;
+
+                forward_peak_energy = 0.0f;
+                forward_peak_idx = sample_idx;
+
                 ESP_LOGI("SWING", "FORWARD");
             }
 
             /* Hvis bevægelsen stopper → reset */
             if (gyro_mag < 5.0f)
+            {
                 swing_state = SWING_IDLE;
-
+                ESP_LOGI("SWING", "RESET from BACKSWING");
+            }
         break;
 
 
@@ -366,6 +393,12 @@ static uint8_t detect_swing(float acc_dynamic, float gyro_mag)
 
             energy_index = (energy_index + 1) % IMPACT_ENERGY_WINDOW;
 
+            if (energy_sum > forward_peak_energy)
+            {
+                forward_peak_energy = energy_sum;
+                forward_peak_idx = sample_idx;
+            }
+
             if (cooldown_counter > 0)
             {
                 cooldown_counter--;
@@ -374,16 +407,23 @@ static uint8_t detect_swing(float acc_dynamic, float gyro_mag)
 
             if (energy_sum > IMPACT_THRESHOLD && dE > IMPACT_RISE_THRESHOLD)
             {
+                current_swing.impact_idx = forward_peak_idx;
+                current_swing.impact_us = imu_rb.buffer[forward_peak_idx].timestamp_us;
+                
                 ESP_LOGW("IMPACT_DEBUG", "IMPACT! E=%.2f dE=%.2f", energy_sum, dE);
 
                 cooldown_counter = IMPACT_COOLDOWN_SAMPLES;
                 swing_state = SWING_FOLLOW;
+
+                current_swing.follow_start_us = imu_rb.buffer[sample_idx].timestamp_us;
+                current_swing.follow_start_idx = sample_idx;
 
                 return 1;
             }
 
             if (forward_counter > 200)
                 swing_state = SWING_IDLE;
+                ESP_LOGI("SWING", "RESET from FORWARD timeout");
 
             break;
         }
@@ -396,8 +436,15 @@ static uint8_t detect_swing(float acc_dynamic, float gyro_mag)
         case SWING_FOLLOW:
 
             /* Når rotation falder igen → reset */
-            if (gyro_mag < 5.0f)
+            if (gyro_mag < 5.0f){
+
+                current_swing.end_us = imu_rb.buffer[sample_idx].timestamp_us;
+                current_swing.end_idx = sample_idx;
+
                 swing_state = SWING_IDLE;
+                swing_manager_add_swing(current_swing);
+                ESP_LOGI("SWING", "SWING END");
+            }
 
         break;
     }
@@ -448,6 +495,10 @@ void imu_task(void *pvParameters)
             sample.timestamp_us = esp_timer_get_time();
 
             imu_ringbuffer_push(&sample);
+            
+            uint32_t sample_idx = (imu_rb.write_index == 0)
+                                ? (IMU_BUFFER_SIZE - 1)
+                                : (imu_rb.write_index - 1);
 
             float ax = ((sensor_data.acc.x / 16384.0f) * 9.81f) - acc_bias_x;
             float ay = ((sensor_data.acc.y / 16384.0f) * 9.81f) - acc_bias_y;
@@ -485,13 +536,9 @@ void imu_task(void *pvParameters)
                     ble_was_busy = false;
                 }
 
-                if (detect_swing(acc_dynamic, last_gyro_mag_dps))
+                if (detect_swing(acc_dynamic, last_gyro_mag_dps, sample_idx))
                 {
-                    uint32_t idx = (imu_rb.write_index == 0)
-                                ? (IMU_BUFFER_SIZE - 1)
-                                : (imu_rb.write_index - 1);
-
-                    swing_manager_notify_impact(idx);
+                    swing_manager_notify_impact(current_swing.impact_idx);
                 }
             }
 
@@ -538,4 +585,10 @@ void imu_ringbuffer_push(const imu_sample_t *sample)
 imu_ringbuffer_t* imu_get_ringbuffer(void)
 {
     return &imu_rb;
+}
+
+
+static void reset_current_swing(void)
+{
+    memset(&current_swing, 0, sizeof(current_swing));
 }
