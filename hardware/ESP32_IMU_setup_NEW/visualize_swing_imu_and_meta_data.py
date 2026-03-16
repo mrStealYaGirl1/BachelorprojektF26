@@ -226,6 +226,9 @@ def main():
         if value is not None:
             print(f"{key}: {value:.3f} s")
 
+    tempo = (phase_times['forward_t'] - phase_times['backswing_t']) / (phase_times['impact_t'] - phase_times['forward_t'])
+    print(f"Tempo (backswing til forward / forward til impact): {tempo}")
+
     print("\nDEBUG:")
     print(f"imu t min/max: {imu_event['t'].min():.3f} / {imu_event['t'].max():.3f}")
     print(f"event_start_t: {phase_times['event_start_t']}")
@@ -290,7 +293,7 @@ def main():
     axes[0].axvline(gyro_peak_t, linestyle=":", linewidth=1.2, label="Gyro peak")
 
     axes[0].set_ylabel("Angle [deg]")
-    axes[0].set_title(f"Golf-event analyse (event {selected_event_id})")
+    axes[0].set_title(f"Golf-event analyse (event {selected_event_id}({imu_csv}))")
     axes[0].grid(True)
     axes[0].legend(loc="upper right", ncol=2)
 
