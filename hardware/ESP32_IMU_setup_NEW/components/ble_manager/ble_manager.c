@@ -46,6 +46,7 @@ static uint32_t notify_fail_count = 0;
 /* IMU TX busy-status */
 static volatile bool s_imu_tx_active = false;
 
+
 /* =========================================================
    FORWARD DECLARATIONS
 ========================================================= */
@@ -72,7 +73,7 @@ static const ble_uuid128_t GOLF_SVC_UUID =
     BLE_UUID128_INIT(0x12,0x34,0x56,0x78,0x90,0xab,0xcd,0xef,0xfe,0xdc,0xba,0x09,0x87,0x65,0x43,0x21);
 
 static const ble_uuid128_t GOLF_CHR_UUID =
-    BLE_UUID128_INIT(0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x00,0x11,0x22,0x33,0x44,0x55,0x66,0x77,0x88,0x99);
+    BLE_UUID128_INIT(0x99,0x88,0x77,0x66,0x55,0x44,0x33,0x22,0x11,0x00,0xff,0xee,0xdd,0xcc,0xbb,0xaa);
 
 static int gatt_svc_access_cb(uint16_t conn_handle, uint16_t attr_handle,
                               struct ble_gatt_access_ctxt *ctxt, void *arg)
@@ -409,4 +410,26 @@ bool ble_manager_is_imu_tx_busy(void)
     if (!s_imu_q) return false;
 
     return (s_imu_tx_active || uxQueueMessagesWaiting(s_imu_q) > 0);
+}
+
+
+
+/* =========================================================
+   META NOTIFY API
+========================================================= */
+int ble_manager_notify_swing_meta_rc(const ble_swing_meta_pkt_t *pkt)
+{
+    if (s_conn_handle == BLE_HS_CONN_HANDLE_NONE) return BLE_NOTIFY_ERR_NOT_CONNECTED;
+    if (!s_notify_enabled) return BLE_NOTIFY_ERR_NOTIFY_DISABLED;
+    if (s_chr_val_handle == 0) return BLE_NOTIFY_ERR_BAD_HANDLE;
+
+    struct os_mbuf *om = ble_hs_mbuf_from_flat(pkt, sizeof(*pkt));
+    if (!om) return BLE_NOTIFY_ERR_NO_MBUF;
+
+    return ble_gatts_notify_custom(s_conn_handle, s_chr_val_handle, om);
+}
+
+bool ble_manager_notify_swing_meta(const ble_swing_meta_pkt_t *pkt)
+{
+    return (ble_manager_notify_swing_meta_rc(pkt) == 0);
 }

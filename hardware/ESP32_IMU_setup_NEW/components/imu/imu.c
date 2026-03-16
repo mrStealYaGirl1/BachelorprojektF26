@@ -422,9 +422,10 @@ static uint8_t detect_swing(float acc_dynamic, float gyro_mag,  uint32_t sample_
             }
 
             if (forward_counter > 200)
+            {
                 swing_state = SWING_IDLE;
                 ESP_LOGI("SWING", "RESET from FORWARD timeout");
-
+            }
             break;
         }
 
