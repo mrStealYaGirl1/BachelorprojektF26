@@ -7,75 +7,253 @@ from bleak import BleakClient, BleakScanner
 DEVICE_NAME = "GOLF_IMU"
 CHAR_UUID = "99887766-5544-3322-1100-ffeeddccbbaa"
 
-# ===== BLE packet format =====
+# =========================================================
+# Packet type IDs
+# =========================================================
+BLE_PKT_TYPE_META = 1
+BLE_PKT_TYPE_IMU = 2
+
+# =========================================================
+# BLE IMU packet format
+# C struct:
+# uint16_t event_id;
+# uint16_t packet_type;
+# uint16_t sample_count;
+# ble_imu_sample_t samples[5];
+#
+# ble_imu_sample_t:
+# int16_t ax, ay, az, gx, gy, gz;
+# uint32_t ts_ms;
+# uint16_t seq;
+# =========================================================
 BLE_IMU_SAMPLES_PER_PKT = 5
-PKT_HEADER_FMT = "<HH"     # event_id, sample_count
-SAMPLE_FMT = "<hhhhhhIH"   # ax ay az gx gy gz ts_ms seq
 
-PKT_HEADER_SIZE = struct.calcsize(PKT_HEADER_FMT)
-SAMPLE_SIZE = struct.calcsize(SAMPLE_FMT)
-PKT_SIZE = PKT_HEADER_SIZE + BLE_IMU_SAMPLES_PER_PKT * SAMPLE_SIZE
+IMU_HEADER_FMT = "<HHH"          # event_id, packet_type, sample_count
+IMU_SAMPLE_FMT = "<hhhhhhIH"     # ax ay az gx gy gz ts_ms seq
 
-# ===== Expected event size =====
+IMU_HEADER_SIZE = struct.calcsize(IMU_HEADER_FMT)     # 6
+IMU_SAMPLE_SIZE = struct.calcsize(IMU_SAMPLE_FMT)     # 18
+IMU_PKT_SIZE = IMU_HEADER_SIZE + BLE_IMU_SAMPLES_PER_PKT * IMU_SAMPLE_SIZE  # 96
+
+# =========================================================
+# BLE META packet format
+# C struct:
+# uint16_t event_id;
+# uint16_t packet_type;
+# uint32_t swing_id;
+# uint16_t sample_rate_hz;
+# uint16_t total_samples;
+# uint16_t pre_samples;
+# uint16_t post_samples;
+# uint16_t impact_index_in_event;
+# uint64_t address_start_us;
+# uint64_t backswing_start_us;
+# uint64_t forward_start_us;
+# uint64_t impact_us;
+# uint64_t follow_start_us;
+# uint64_t end_us;
+# uint64_t event_start_us;
+# uint64_t event_end_us;
+# =========================================================
+META_FMT = "<HHIHHHHHQQQQQQQQ"
+META_SIZE = struct.calcsize(META_FMT)   # 82 bytes
+
+# =========================================================
+# Expected event size
+# =========================================================
 EXPECTED_SAMPLES_PER_EVENT = 1000
 
-# ===== Globals =====
-csv_file = None
-csv_writer = None
-csv_filename = None
+# =========================================================
+# Globals
+# =========================================================
+imu_csv_file = None
+imu_csv_writer = None
+imu_csv_filename = None
+
+meta_csv_file = None
+meta_csv_writer = None
+meta_csv_filename = None
 
 event_sample_counts = {}
 finished_events = set()
 last_seq_per_event = {}
+meta_per_event = {}
 
 
-def open_csv_file():
-    global csv_file, csv_writer, csv_filename
+def open_csv_files():
+    global imu_csv_file, imu_csv_writer, imu_csv_filename
+    global meta_csv_file, meta_csv_writer, meta_csv_filename
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    csv_filename = f"golf_event_{timestamp}.csv"
 
-    csv_file = open(csv_filename, "w", newline="", encoding="utf-8")
-    csv_writer = csv.writer(csv_file)
-    csv_writer.writerow([
+    imu_csv_filename = f"golf_event_{timestamp}_imu.csv"
+    meta_csv_filename = f"golf_event_{timestamp}_meta.csv"
+
+    imu_csv_file = open(imu_csv_filename, "w", newline="", encoding="utf-8")
+    imu_csv_writer = csv.writer(imu_csv_file)
+    imu_csv_writer.writerow([
         "event_id", "seq", "ts_ms",
         "ax", "ay", "az",
         "gx", "gy", "gz"
     ])
 
-    print(f"Saving data to: {csv_filename}")
+    meta_csv_file = open(meta_csv_filename, "w", newline="", encoding="utf-8")
+    meta_csv_writer = csv.writer(meta_csv_file)
+    meta_csv_writer.writerow([
+        "event_id",
+        "swing_id",
+        "sample_rate_hz",
+        "total_samples",
+        "pre_samples",
+        "post_samples",
+        "impact_index_in_event",
+        "address_start_us",
+        "backswing_start_us",
+        "forward_start_us",
+        "impact_us",
+        "follow_start_us",
+        "end_us",
+        "event_start_us",
+        "event_end_us"
+    ])
+
+    print(f"Saving IMU data to:  {imu_csv_filename}")
+    print(f"Saving META data to: {meta_csv_filename}")
 
 
-def close_csv_file():
-    global csv_file
-    if csv_file:
-        csv_file.close()
-        print(f"CSV file closed: {csv_filename}")
+def close_csv_files():
+    global imu_csv_file, meta_csv_file
+
+    if imu_csv_file:
+        imu_csv_file.close()
+        print(f"IMU CSV file closed: {imu_csv_filename}")
+
+    if meta_csv_file:
+        meta_csv_file.close()
+        print(f"META CSV file closed: {meta_csv_filename}")
 
 
-def decode_packet(data: bytes):
-    if len(data) != PKT_SIZE:
-        print(f"Unexpected packet size: {len(data)} (expected {PKT_SIZE})")
+def decode_notification(data: bytes):
+    if len(data) < 4:
+        print(f"Packet too short: {len(data)} bytes")
         return
 
-    event_id, sample_count = struct.unpack_from(PKT_HEADER_FMT, data, 0)
+    event_id, packet_type = struct.unpack_from("<HH", data, 0)
 
-    offset = PKT_HEADER_SIZE
+    if packet_type == BLE_PKT_TYPE_META:
+        decode_meta_packet(data)
+
+    elif packet_type == BLE_PKT_TYPE_IMU:
+        decode_imu_packet(data)
+
+    else:
+        print(f"Unknown packet_type={packet_type} len={len(data)} event_id={event_id}")
+
+
+def decode_meta_packet(data: bytes):
+    if len(data) != META_SIZE:
+        print(f"Unexpected META packet size: {len(data)} (expected {META_SIZE})")
+        return
+
+    (
+        event_id,
+        packet_type,
+        swing_id,
+        sample_rate_hz,
+        total_samples,
+        pre_samples,
+        post_samples,
+        impact_index_in_event,
+        address_start_us,
+        backswing_start_us,
+        forward_start_us,
+        impact_us,
+        follow_start_us,
+        end_us,
+        event_start_us,
+        event_end_us,
+    ) = struct.unpack(META_FMT, data)
+
+    meta = {
+        "event_id": event_id,
+        "packet_type": packet_type,
+        "swing_id": swing_id,
+        "sample_rate_hz": sample_rate_hz,
+        "total_samples": total_samples,
+        "pre_samples": pre_samples,
+        "post_samples": post_samples,
+        "impact_index_in_event": impact_index_in_event,
+        "address_start_us": address_start_us,
+        "backswing_start_us": backswing_start_us,
+        "forward_start_us": forward_start_us,
+        "impact_us": impact_us,
+        "follow_start_us": follow_start_us,
+        "end_us": end_us,
+        "event_start_us": event_start_us,
+        "event_end_us": event_end_us,
+    }
+
+    meta_per_event[event_id] = meta
+
+    meta_csv_writer.writerow([
+        event_id,
+        swing_id,
+        sample_rate_hz,
+        total_samples,
+        pre_samples,
+        post_samples,
+        impact_index_in_event,
+        address_start_us,
+        backswing_start_us,
+        forward_start_us,
+        impact_us,
+        follow_start_us,
+        end_us,
+        event_start_us,
+        event_end_us,
+    ])
+
+    print(
+        f"[META] event={event_id} swing_id={swing_id} "
+        f"samples={total_samples} fs={sample_rate_hz}Hz "
+        f"impact_idx={impact_index_in_event}"
+    )
+
+    if backswing_start_us and impact_us:
+        print(f"       backswing->impact: {(impact_us - backswing_start_us)/1000:.1f} ms")
+    if forward_start_us and impact_us:
+        print(f"       forward->impact:   {(impact_us - forward_start_us)/1000:.1f} ms")
+    if event_start_us and event_end_us:
+        print(f"       event duration:    {(event_end_us - event_start_us)/1_000_000:.3f} s")
+
+
+def decode_imu_packet(data: bytes):
+    if len(data) != IMU_PKT_SIZE:
+        print(f"Unexpected IMU packet size: {len(data)} (expected {IMU_PKT_SIZE})")
+        return
+
+    event_id, packet_type, sample_count = struct.unpack_from(IMU_HEADER_FMT, data, 0)
+
+    if sample_count > BLE_IMU_SAMPLES_PER_PKT:
+        print(f"Invalid IMU sample_count={sample_count} for event {event_id}")
+        return
+
+    offset = IMU_HEADER_SIZE
 
     for _ in range(sample_count):
-        ax, ay, az, gx, gy, gz, ts_ms, seq = struct.unpack_from(SAMPLE_FMT, data, offset)
-        offset += SAMPLE_SIZE
+        ax, ay, az, gx, gy, gz, ts_ms, seq = struct.unpack_from(IMU_SAMPLE_FMT, data, offset)
+        offset += IMU_SAMPLE_SIZE
 
-        process_sample(event_id, seq, ts_ms, ax, ay, az, gx, gy, gz)
+        process_imu_sample(event_id, seq, ts_ms, ax, ay, az, gx, gy, gz)
 
 
-def process_sample(event_id, seq, ts_ms, ax, ay, az, gx, gy, gz):
-    global csv_writer, event_sample_counts, finished_events, last_seq_per_event
+def process_imu_sample(event_id, seq, ts_ms, ax, ay, az, gx, gy, gz):
+    global imu_csv_writer, event_sample_counts, finished_events, last_seq_per_event
 
     if event_id not in event_sample_counts:
         event_sample_counts[event_id] = 0
         last_seq_per_event[event_id] = None
-        print(f"Started receiving event {event_id}")
+        print(f"Started receiving IMU for event {event_id}")
 
     last_seq = last_seq_per_event[event_id]
     if last_seq is not None and seq != last_seq + 1:
@@ -84,29 +262,30 @@ def process_sample(event_id, seq, ts_ms, ax, ay, az, gx, gy, gz):
     last_seq_per_event[event_id] = seq
 
     if seq % 100 == 0:
-        print(f"EV:{event_id} SEQ:{seq} T:{ts_ms}")
+        print(f"[IMU] EV:{event_id} SEQ:{seq} T:{ts_ms}")
 
-    csv_writer.writerow([event_id, seq, ts_ms, ax, ay, az, gx, gy, gz])
+    imu_csv_writer.writerow([event_id, seq, ts_ms, ax, ay, az, gx, gy, gz])
 
     event_sample_counts[event_id] += 1
 
-    if (
-        event_sample_counts[event_id] >= EXPECTED_SAMPLES_PER_EVENT
-        and event_id not in finished_events
-    ):
+    expected_samples = EXPECTED_SAMPLES_PER_EVENT
+    if event_id in meta_per_event:
+        expected_samples = meta_per_event[event_id]["total_samples"]
+
+    if event_sample_counts[event_id] >= expected_samples and event_id not in finished_events:
         finished_events.add(event_id)
         print(f"Event {event_id} finished. Received {event_sample_counts[event_id]} samples.")
 
 
 def notification_handler(sender, data):
     try:
-        decode_packet(data)
+        decode_notification(data)
     except Exception as e:
         print(f"Error in notification handler: {e}")
 
 
 async def main():
-    open_csv_file()
+    open_csv_files()
 
     print("Scanning for device...")
     devices = await BleakScanner.discover()
@@ -119,7 +298,7 @@ async def main():
 
     if target is None:
         print("Device not found")
-        close_csv_file()
+        close_csv_files()
         return
 
     print("Found device:", target.address)
@@ -127,6 +306,7 @@ async def main():
     try:
         async with BleakClient(target.address) as client:
             print("Connected!")
+
             await client.start_notify(CHAR_UUID, notification_handler)
             print("Notifications started. Waiting for data...")
 
@@ -137,14 +317,25 @@ async def main():
         print("Stopping by user...")
 
     finally:
-        close_csv_file()
+        close_csv_files()
 
         if event_sample_counts:
             print("\nSummary:")
             for event_id in sorted(event_sample_counts.keys()):
                 count = event_sample_counts[event_id]
-                status = "OK" if count >= EXPECTED_SAMPLES_PER_EVENT else "INCOMPLETE"
-                print(f"Event {event_id}: {count} samples ({status})")
+                expected = meta_per_event.get(event_id, {}).get("total_samples", EXPECTED_SAMPLES_PER_EVENT)
+                status = "OK" if count >= expected else "INCOMPLETE"
+                print(f"Event {event_id}: {count}/{expected} samples ({status})")
+
+        if meta_per_event:
+            print("\nMETA received for events:")
+            for event_id in sorted(meta_per_event.keys()):
+                meta = meta_per_event[event_id]
+                print(
+                    f"Event {event_id}: swing_id={meta['swing_id']}, "
+                    f"impact_idx={meta['impact_index_in_event']}, "
+                    f"sample_rate={meta['sample_rate_hz']} Hz"
+                )
 
 
 if __name__ == "__main__":
