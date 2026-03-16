@@ -196,6 +196,11 @@ void swing_manager_task(void *pvParameters)
                 int64_t tImpact = swing_buffer[PRE_SAMPLES].timestamp_us;
                 int64_t tEnd = swing_buffer[EVENT_SIZE-1].timestamp_us;
 
+                ESP_LOGI(TAG, "write_index now: %u", imu_get_ringbuffer()->write_index);
+                ESP_LOGI(TAG, "event_impact_index: %u", event_impact_index);
+                ESP_LOGI(TAG, "start index: %u",
+                        (event_impact_index + IMU_BUFFER_SIZE - PRE_SAMPLES) % IMU_BUFFER_SIZE);                
+
                 ESP_LOGI(TAG, "Pre duration:  %.3f sec", (tImpact - t0) / 1000000.0);
                 ESP_LOGI(TAG, "Post duration: %.3f sec", (tEnd - tImpact) / 1000000.0);
                 ESP_LOGI(TAG, "Total duration: %.3f sec", (tEnd - t0) / 1000000.0);

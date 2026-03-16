@@ -10,7 +10,7 @@
 ===================================================== */
 
 #define IMU_SAMPLE_RATE_HZ      200     // 200 Hz
-#define IMU_TOTAL_SECONDS       5      // 3 sec pre + 2 sec post
+#define IMU_TOTAL_SECONDS       6      // 3 sec pre + 2 sec post + 1 sec margin = 6 seconds for ringbuffer
 #define IMU_BUFFER_SIZE  (IMU_SAMPLE_RATE_HZ * IMU_TOTAL_SECONDS)
 
 
@@ -29,7 +29,7 @@ typedef struct
     int16_t gy;
     int16_t gz;
 
-    uint32_t timestamp_us;
+    uint64_t timestamp_us;
 
 } imu_sample_t;
 #pragma pack(pop)
@@ -99,12 +99,12 @@ typedef struct
     uint32_t swing_id;
 
     // saves time in mikroseconds
-    uint32_t address_start_us;       
-    uint32_t backswing_start_us;
-    uint32_t forward_start_us;
-    uint32_t impact_us;
-    uint32_t follow_start_us;
-    uint32_t end_us;
+    uint64_t address_start_us;       
+    uint64_t backswing_start_us;
+    uint64_t forward_start_us;
+    uint64_t impact_us;
+    uint64_t follow_start_us;
+    uint64_t end_us;
    
     // saves index in ringbuffer
     uint16_t address_start_idx;
