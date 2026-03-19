@@ -43,6 +43,10 @@ static bool s_notify_enabled = false;
 static uint32_t notify_ok_count = 0;
 static uint32_t notify_fail_count = 0;
 
+/* IMU TX busy-status */
+static volatile bool s_imu_tx_active = false;
+
+
 /* =========================================================
    FORWARD DECLARATIONS
 ========================================================= */
@@ -360,6 +364,8 @@ static void ble_imu_tx_task(void *arg)
 
             /* pacing for BLE stability */
             vTaskDelay(pdMS_TO_TICKS(18));
+
+            s_imu_tx_active = false;    
         }
     }
 }
@@ -397,4 +403,33 @@ uint32_t ble_manager_get_notify_ok_count(void)
 uint32_t ble_manager_get_notify_fail_count(void)
 {
     return notify_fail_count;
+}
+
+bool ble_manager_is_imu_tx_busy(void)
+{
+    if (!s_imu_q) return false;
+
+    return (s_imu_tx_active || uxQueueMessagesWaiting(s_imu_q) > 0);
+}
+
+
+
+/* =========================================================
+   META NOTIFY API
+========================================================= */
+int ble_manager_notify_swing_meta_rc(const ble_swing_meta_pkt_t *pkt)
+{
+    if (s_conn_handle == BLE_HS_CONN_HANDLE_NONE) return BLE_NOTIFY_ERR_NOT_CONNECTED;
+    if (!s_notify_enabled) return BLE_NOTIFY_ERR_NOTIFY_DISABLED;
+    if (s_chr_val_handle == 0) return BLE_NOTIFY_ERR_BAD_HANDLE;
+
+    struct os_mbuf *om = ble_hs_mbuf_from_flat(pkt, sizeof(*pkt));
+    if (!om) return BLE_NOTIFY_ERR_NO_MBUF;
+
+    return ble_gatts_notify_custom(s_conn_handle, s_chr_val_handle, om);
+}
+
+bool ble_manager_notify_swing_meta(const ble_swing_meta_pkt_t *pkt)
+{
+    return (ble_manager_notify_swing_meta_rc(pkt) == 0);
 }

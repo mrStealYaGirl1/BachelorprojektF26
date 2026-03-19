@@ -26,8 +26,21 @@ static imu_ringbuffer_t imu_rb;
 ===================================================== */
 
 #define IMPACT_ENERGY_WINDOW      8
-#define IMPACT_THRESHOLD          20.0f
+#define IMPACT_THRESHOLD          25.0f
 #define IMPACT_COOLDOWN_SAMPLES   200   // 1 sekund ved 200 Hz
+
+typedef enum
+{
+    SWING_IDLE,
+    SWING_ADDRESS,
+    SWING_BACKSWING,
+    SWING_FORWARD,
+    SWING_FOLLOW
+} swing_state_t;
+
+static swing_state_t swing_state = SWING_IDLE;
+static uint32_t still_counter = 0;
+static uint32_t forward_counter = 0;
 
 static float energy_buffer[IMPACT_ENERGY_WINDOW] = {0};
 static uint8_t energy_index = 0;
@@ -40,8 +53,43 @@ static float last_gyro_mag_dps = 0.0f;
 //spike detection
 #define IMPACT_RISE_THRESHOLD  27.0f   // startværdi, tune via log
 static float prev_energy_sum = 0.0f;
+//current swing timing
+static swing_timing_t current_swing = {0};
+static uint32_t next_swing_id = 1;
+static float forward_peak_energy = 0.0f;
+static uint32_t forward_peak_idx = 0;
 
-/* =====================================================
+// swing detection state machine thesholds
+#define GZ_BACKSWING_START_DPS   20.0f
+#define GZ_FORWARD_START_DPS    -20.0f
+#define GZ_IDLE_DPS              5.0f
+
+#define SWING_CONFIRM_SAMPLES    3
+#define ADDRESS_RESET_SAMPLES  5
+#define ADDRESS_STILL_RESET_SAMPLES  400 // 2 sekunder ved 200 Hz
+
+static uint8_t backswing_confirm_count = 0;
+static uint8_t forward_confirm_count = 0;
+static uint8_t address_reset_confirm_count = 0;
+static uint8_t address_still_counter = 0;
+
+static uint8_t backswing_reset_confirm_count = 0;
+#define BACKSWING_RESET_SAMPLES  6
+
+static float backswing_peak_gz = 0.0f;
+static uint32_t backswing_peak_idx = 0;
+static uint8_t forward_fall_confirm_count = 0;
+
+#define GZ_BACKSWING_START_DPS      20.0f
+#define GZ_BACKSWING_PEAK_DROP_DPS  15.0f
+#define SWING_CONFIRM_SAMPLES       3
+
+static int32_t backswing_zero_cross_idx = 0;
+static uint8_t zero_cross_confirm_count = 0;
+#define GZ_ZERO_CROSS_BAND_DPS      5.0f
+#define ZERO_CROSS_CONFIRM_SAMPLES  2
+
+/* ====================================================
    BIAS
 ===================================================== */
 
@@ -54,7 +102,11 @@ static float acc_bias_y = 0;
 static float acc_bias_z = 0;
 
 static void imu_calibrate(void);
-static uint8_t detect_impact(float acc_dynamic);
+static void reset_current_swing(void);
+static uint8_t detect_swing(float acc_dynamic,
+                            float gyro_mag,
+                            float gz_dps,
+                            uint32_t sample_idx);
 
 /* =====================================================
    SPI CONFIG
@@ -245,6 +297,34 @@ static void imu_calibrate(void)
     ESP_LOGI(TAG, "Calibration done");
 }
 
+
+
+static uint32_t find_backswing_start_idx(uint32_t current_idx)
+{
+    imu_ringbuffer_t *rb = imu_get_ringbuffer();
+
+    const uint32_t search_back = 40;   // 40 samples = 0.2 s ved 200 Hz
+    uint32_t best_idx = current_idx;
+
+    for (uint32_t k = 1; k <= search_back; k++)
+    {
+        uint32_t idx = (current_idx + IMU_BUFFER_SIZE - k) % IMU_BUFFER_SIZE;
+
+        float gz_dps = (rb->buffer[idx].gz * (2000.0f / 32768.0f)) - gyro_bias_z;
+
+        if (fabsf(gz_dps) < 5.0f)
+        {
+            best_idx = idx;
+            break;
+        }
+    }
+
+    return best_idx;
+}
+
+
+
+
 /* =====================================================
    IMPACT DETECTION
 ===================================================== */
@@ -253,75 +333,346 @@ static float energy_sum_peak = 0.0f;
 static uint32_t peak_print_counter = 0;
 //static float gyro_peak_1s = 0.0f;
 
-static uint8_t detect_impact(float acc_dynamic)
+static uint8_t detect_swing(float acc_dynamic,
+                            float gyro_mag,
+                            float gz_dps,
+                            uint32_t sample_idx)
 {
-    float energy = acc_dynamic * acc_dynamic;
+    /*
+       Denne funktion implementerer swing state machine.
+       Den bruger både gyro (rotation) og impact-detektor (energy spike).
+    */
+    /*
+       State machine:
+       IDLE      -> køllen står stille
+       ADDRESS   -> setup/adresse
+       BACKSWING -> gz stiger / er høj positiv
+       FORWARD   -> gz falder igen efter backswing
+       FOLLOW    -> efter impact
+    */
 
-    energy_sum -= energy_buffer[energy_index];
-    energy_buffer[energy_index] = energy;
-    energy_sum += energy;
-
-    float dE = energy_sum - prev_energy_sum;    // delta Energy for spike detection - ændring i energi fra én sample til den næste. (ryk => dE moderat (energi bygger op over flere samples), slag => dE stor (energi ændrer sig meget på kort tid))
-    prev_energy_sum = energy_sum;
-
-
-    if (energy_sum > energy_sum_peak) energy_sum_peak = energy_sum;
-    //if (last_gyro_mag_dps > gyro_peak_1s) gyro_peak_1s = last_gyro_mag_dps;
-
-
-    peak_print_counter++;
-    if (peak_print_counter >= 200) { // ca 1 sekund ved 200 Hz
-        //ESP_LOGI("IMPACT_DEBUG", "energy_sum=%.2f  peak_1s=%.2f", energy_sum, energy_sum_peak);
-        energy_sum_peak = 0.0f;
-
-        //ESP_LOGI("IMPACT_DEBUG", "E=%.2f peakE=%.2f  gyro=%.1f peakG=%.1f", energy_sum, energy_sum_peak, last_gyro_mag_dps, gyro_peak_1s);
-        //gyro_peak_1s = 0.0f;
-
-        peak_print_counter = 0;
-    }
-
-
-
-    energy_index = (energy_index + 1) % IMPACT_ENERGY_WINDOW;
-
-    //ESP_LOGI("IMPACT_DEBUG", "energy_sum=%.2f", energy_sum);
-
-    if (cooldown_counter > 0)
+    switch (swing_state)
     {
-        cooldown_counter--;
-        return 0;
+
+        /* -----------------------------------------
+           SWING_IDLE
+           Køllen er i ro
+        ----------------------------------------- */
+
+        case SWING_IDLE:
+        {
+            /* Hvis rotation næsten er nul → køllen står stille */
+            if (gyro_mag < 5.0f)
+                still_counter++;
+            else
+                still_counter = 0;
+
+            /* Hvis køllen har været stille i 0.5 sek → ADDRESS */
+            if (still_counter > 100)
+            {
+                swing_state = SWING_ADDRESS;
+                still_counter = 0;
+                forward_counter = 0;
+
+                reset_current_swing();
+                current_swing.swing_id = next_swing_id++;
+                current_swing.address_start_us = imu_rb.buffer[sample_idx].timestamp_us;
+                current_swing.address_start_idx = sample_idx;  
+                
+                ESP_LOGI("SWING", "ADDRESS detected");
+            }
+
+        break;
+        }
+
+        /* -----------------------------------------
+           SWING_ADDRESS
+           Spilleren står klar (vent på backswing)
+        ----------------------------------------- */
+
+        case SWING_ADDRESS:
+
+            /*
+                Brug gz direkte:
+                backswing starter når gz bliver tydeligt positiv
+                TUNE DENNE TÆRSKEL
+            */
+             /* backswing starter når gz bliver tydeligt positiv */
+            if (gz_dps > GZ_BACKSWING_START_DPS)
+            {
+                backswing_confirm_count++;
+            }
+            else
+            {
+                backswing_confirm_count = 0;
+            }
+
+            if (backswing_confirm_count >= SWING_CONFIRM_SAMPLES)
+            {
+                swing_state = SWING_BACKSWING;
+                backswing_confirm_count = 0;
+                forward_confirm_count = 0;
+                forward_fall_confirm_count = 0;
+
+                uint32_t start_idx = find_backswing_start_idx(sample_idx);
+
+                current_swing.backswing_start_idx = start_idx;
+                current_swing.backswing_start_us = imu_rb.buffer[start_idx].timestamp_us;
+
+                backswing_peak_gz = gz_dps;
+                backswing_peak_idx = sample_idx;
+
+                ESP_LOGI("SWING", "BACKSWING (gz=%.1f)", gz_dps);
+                break;
+            }
+
+            /* hvis brugeren bliver stille igen -> tilbage til IDLE */
+            if (gyro_mag < GZ_IDLE_DPS)
+            {
+                address_still_counter++;
+            }
+            else
+            {
+                address_still_counter = 0;
+            }
+
+            if (address_still_counter >= ADDRESS_STILL_RESET_SAMPLES)
+            {
+                swing_state = SWING_IDLE;
+                backswing_confirm_count = 0;
+                forward_confirm_count = 0;
+                address_still_counter = 0;
+
+                ESP_LOGI("SWING", "RESET from ADDRESS to IDLE");
+            }
+
+            break;
+
+        //     /* Hvis rotation bliver større → BACKSWING */
+        //     if (gyro_mag > 20.0f)
+        //     {
+        //         swing_state = SWING_BACKSWING;
+
+        //         current_swing.backswing_start_us = imu_rb.buffer[sample_idx].timestamp_us;
+        //         current_swing.backswing_start_idx = sample_idx;
+
+        //         ESP_LOGI("SWING", "BACKSWING");
+        //     }
+
+        // break;
+
+
+        /* -----------------------------------------
+           SWING_BACKSWING
+           Køllen trækkes bagud (gz er høj / positiv og derefter begynder den at falde)
+        ----------------------------------------- */
+
+        case SWING_BACKSWING:
+
+            /*
+            FORWARD starter når gz er faldet igen.
+            Hvis jeres forward faktisk går negativ, så kan denne
+            tærskel senere ændres til fx gz_dps < -40.
+            */
+
+            /* opdater peak */
+            if (gz_dps > backswing_peak_gz)
+            {
+                backswing_peak_gz = gz_dps;
+                backswing_peak_idx = sample_idx;
+            }
+
+            /*
+            Forward skal starte ved toppen af vinkelkurven.
+            Det svarer til at gz går fra positiv til omkring 0 / negativ.
+            Derfor kigger vi efter zero crossing efter et gyldigt backswing-peak.
+            */
+            if (backswing_peak_gz > GZ_BACKSWING_START_DPS)
+            {
+                if (gz_dps < GZ_ZERO_CROSS_BAND_DPS)
+                {
+                    zero_cross_confirm_count++;
+                }
+                else
+                {
+                    zero_cross_confirm_count = 0;
+                }
+
+                if (zero_cross_confirm_count >= ZERO_CROSS_CONFIRM_SAMPLES)
+                {
+                    backswing_zero_cross_idx = sample_idx;
+
+                    swing_state = SWING_FORWARD;
+                    zero_cross_confirm_count = 0;
+                    backswing_reset_confirm_count = 0;
+                    forward_counter = 0;
+
+                    /* forward starter ved zero crossing = top af vinkelkurven */
+                    current_swing.forward_start_us = imu_rb.buffer[backswing_zero_cross_idx].timestamp_us;
+                    current_swing.forward_start_idx = backswing_zero_cross_idx;
+
+                    forward_peak_energy = 0.0f;
+                    forward_peak_idx = sample_idx;
+
+                    ESP_LOGI("SWING",
+                            "FORWARD at zero-cross (peak_gz=%.1f gz_now=%.1f)",
+                            backswing_peak_gz, gz_dps);
+                    break;
+                }
+            }
+
+            /* reset hvis backswing dør ud */
+            if (fabsf(gz_dps) < GZ_IDLE_DPS && gyro_mag < 10.0f)
+            {
+                backswing_reset_confirm_count++;
+            }
+            else
+            {
+                backswing_reset_confirm_count = 0;
+            }
+
+            if (backswing_reset_confirm_count >= BACKSWING_RESET_SAMPLES)
+            {
+                swing_state = SWING_IDLE;
+                backswing_confirm_count = 0;
+                forward_confirm_count = 0;
+                forward_fall_confirm_count = 0;
+                zero_cross_confirm_count = 0;
+                backswing_reset_confirm_count = 0;
+
+                ESP_LOGI("SWING", "RESET from BACKSWING");
+            }
+
+            break;
+            
+
+//ESP_LOGI("SWING_DBG", "state=%d gz=%.1f gyro_mag=%.1f", swing_state, gz_dps, gyro_mag);
+
+        //     /* Når rotation bliver endnu større → FORWARD */
+        //     if (gyro_mag > 40.0f)
+        //     {
+        //         swing_state = SWING_FORWARD;
+        //         forward_counter = 0;
+
+        //         current_swing.forward_start_us = imu_rb.buffer[sample_idx].timestamp_us;
+        //         current_swing.forward_start_idx = sample_idx;
+
+        //         forward_peak_energy = 0.0f;
+        //         forward_peak_idx = sample_idx;
+
+        //         ESP_LOGI("SWING", "FORWARD");
+        //     }
+
+        //     /* Hvis bevægelsen stopper → reset */
+        //     if (gyro_mag < 5.0f)
+        //     {
+        //         swing_state = SWING_IDLE;
+        //         ESP_LOGI("SWING", "RESET from BACKSWING");
+        //     }
+        // break;
+
+
+        /* -----------------------------------------
+           SWING_FORWARD
+           Køllen accelererer frem mod bolden (impact detekteres her)
+        ----------------------------------------- */
+
+        case SWING_FORWARD:
+        {
+
+            forward_counter++;
+
+            /*
+               Her bruger vi den eksisterende impact-detektor
+               baseret på energy + dE spike
+            */
+
+            float energy = acc_dynamic * acc_dynamic;
+
+            energy_sum -= energy_buffer[energy_index];
+            energy_buffer[energy_index] = energy;
+            energy_sum += energy;
+
+            float dE = energy_sum - prev_energy_sum;
+            prev_energy_sum = energy_sum;
+
+            energy_index = (energy_index + 1) % IMPACT_ENERGY_WINDOW;
+
+            if (energy_sum > forward_peak_energy)
+            {
+                forward_peak_energy = energy_sum;
+                forward_peak_idx = sample_idx;
+            }
+
+            if (cooldown_counter > 0)
+            {
+                cooldown_counter--;
+                break;
+            }
+
+            if (energy_sum > IMPACT_THRESHOLD && dE > IMPACT_RISE_THRESHOLD)
+            {
+                current_swing.impact_idx = forward_peak_idx;
+                current_swing.impact_us = imu_rb.buffer[forward_peak_idx].timestamp_us;
+                
+                ESP_LOGW("IMPACT_DEBUG", "IMPACT! E=%.2f dE=%.2f", energy_sum, dE);
+
+                cooldown_counter = IMPACT_COOLDOWN_SAMPLES;
+                swing_state = SWING_FOLLOW;
+
+                current_swing.follow_start_us = imu_rb.buffer[sample_idx].timestamp_us;
+                current_swing.follow_start_idx = sample_idx;
+
+                return 1;
+            }
+
+            if (forward_counter > 200)
+            {
+                swing_state = SWING_IDLE;
+                ESP_LOGI("SWING", "RESET from FORWARD timeout");
+            }
+            break;
+        }
+
+        /* -----------------------------------------
+           SWING_FOLLOW
+           Efter slaget
+        ----------------------------------------- */
+
+        case SWING_FOLLOW:
+        {
+            if (gyro_mag < 5.0f)
+            {
+                current_swing.end_us = imu_rb.buffer[sample_idx].timestamp_us;
+                current_swing.end_idx = sample_idx;
+
+                swing_state = SWING_IDLE;
+                swing_manager_add_swing(current_swing);
+                ESP_LOGI("SWING", "SWING END");
+            }
+
+            break;
+        }
     }
-
-    // if (energy_sum > IMPACT_THRESHOLD)
-    // {
-    //     ESP_LOGW("IMPACT_DEBUG", "IMPACT! energy_sum=%.2f", energy_sum);
-    //     cooldown_counter = IMPACT_COOLDOWN_SAMPLES;
-    //     return 1;
-    // }
-
-    // if (energy_sum > IMPACT_THRESHOLD && last_gyro_mag_dps > GYRO_GATE_THRESHOLD_DPS)
-    // {
-    //     ESP_LOGW("IMPACT_DEBUG", "IMPACT! E=%.2f gyro=%.1f dps", energy_sum, last_gyro_mag_dps);
-    //     cooldown_counter = IMPACT_COOLDOWN_SAMPLES;
-    //     return 1;
-    // }
-    if (energy_sum > IMPACT_THRESHOLD && dE > IMPACT_RISE_THRESHOLD)
-{
-    ESP_LOGW("IMPACT_DEBUG", "IMPACT! E=%.2f dE=%.2f", energy_sum, dE);
-    cooldown_counter = IMPACT_COOLDOWN_SAMPLES;
-    return 1;
-}
-
-
-    // log why it does not trigger impact
-    if (energy_sum > IMPACT_THRESHOLD && dE <= IMPACT_RISE_THRESHOLD)
-    {
-        //ESP_LOGI("IMPACT_DEBUG", "Blocked by rise threshold: E=%.2f dE=%.2f", energy_sum, dE);
-    }
-
 
     return 0;
 }
+
+/* =====================================================
+   RESET IMPACT DETECTOR
+===================================================== */
+
+static void reset_impact_detector(void)
+{
+    memset(energy_buffer, 0, sizeof(energy_buffer));
+    energy_index = 0;
+    energy_sum = 0.0f;
+    prev_energy_sum = 0.0f;
+    cooldown_counter = 0;
+    energy_sum_peak = 0.0f;
+    peak_print_counter = 0;
+}
+
 
 /* =====================================================
    TASK
@@ -350,6 +701,10 @@ void imu_task(void *pvParameters)
             sample.timestamp_us = esp_timer_get_time();
 
             imu_ringbuffer_push(&sample);
+            
+            uint32_t sample_idx = (imu_rb.write_index == 0)
+                                ? (IMU_BUFFER_SIZE - 1)
+                                : (imu_rb.write_index - 1);
 
             float ax = ((sensor_data.acc.x / 16384.0f) * 9.81f) - acc_bias_x;
             float ay = ((sensor_data.acc.y / 16384.0f) * 9.81f) - acc_bias_y;
@@ -365,14 +720,45 @@ void imu_task(void *pvParameters)
 
             last_gyro_mag_dps = sqrtf(gx_dps*gx_dps + gy_dps*gy_dps + gz_dps*gz_dps);
 
-            if (detect_impact(acc_dynamic))
-            {
-                uint32_t idx = (imu_rb.write_index == 0)
-                               ? (IMU_BUFFER_SIZE - 1)
-                               : (imu_rb.write_index - 1);
+            static bool ble_was_busy = false;
 
-                swing_manager_notify_impact(idx);
+
+            // Check if BLE is busy with IMU TX - if so, ignore impacts and reset detector when BLE is free again
+            bool ble_busy = ble_manager_is_imu_tx_busy();
+            if (ble_busy)
+            {
+                if (!ble_was_busy) {
+                    ESP_LOGI(TAG, "Ignoring impacts while BLE IMU TX is busy");
+                    reset_impact_detector();
+                }
+
+                ble_was_busy = true;
             }
+            else
+            {
+                if (ble_was_busy) {
+                    ESP_LOGI(TAG, "BLE IMU TX finished, impact detection enabled again");
+                    reset_impact_detector();
+                    ble_was_busy = false;
+                }
+
+                if (detect_swing(acc_dynamic, last_gyro_mag_dps, gz_dps, sample_idx))
+                {
+                    swing_manager_notify_impact(current_swing.impact_idx);
+                }
+            }
+
+
+
+
+            // if (detect_impact(acc_dynamic))
+            // {
+            //     uint32_t idx = (imu_rb.write_index == 0)
+            //                    ? (IMU_BUFFER_SIZE - 1)
+            //                    : (imu_rb.write_index - 1);
+
+            //     swing_manager_notify_impact(idx);
+            // }
         }
 
         vTaskDelayUntil(&last_wake_time, pdMS_TO_TICKS(5)); // 200 Hz --- FreeRTOS changed to 1000 Hz (100 Hz before)
@@ -406,3 +792,11 @@ imu_ringbuffer_t* imu_get_ringbuffer(void)
 {
     return &imu_rb;
 }
+
+
+static void reset_current_swing(void)
+{
+    memset(&current_swing, 0, sizeof(current_swing));
+}
+
+

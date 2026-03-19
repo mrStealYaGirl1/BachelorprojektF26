@@ -25,11 +25,13 @@ static swing_state_t state = STATE_WAIT;
 
 static imu_sample_t swing_buffer[EVENT_SIZE];
 
+static uint32_t event_impact_index = 0;
 static uint32_t impact_index = 0;
 static uint32_t post_counter = 0;
 static uint32_t cooldown_counter = 0;
 static uint8_t impact_pending = 0;
-
+static swing_timing_t current_event_timing;
+static uint8_t current_event_timing_valid = 0;
 
 void swing_manager_notify_impact(uint32_t index)
 {
@@ -40,13 +42,19 @@ void swing_manager_notify_impact(uint32_t index)
     }
 }
 
+void swing_manager_add_swing(swing_timing_t swing)
+{
+    current_event_timing = swing;
+    current_event_timing_valid = 1;
+}
+
 
 static void copy_event_from_ringbuffer(void)
 {
     imu_ringbuffer_t *rb = imu_get_ringbuffer();
 
     uint32_t start =
-        (impact_index + IMU_BUFFER_SIZE - PRE_SAMPLES) % IMU_BUFFER_SIZE;
+    (   event_impact_index + IMU_BUFFER_SIZE - PRE_SAMPLES) % IMU_BUFFER_SIZE;
 
     for (uint32_t i = 0; i < EVENT_SIZE; i++)
     {
@@ -70,10 +78,16 @@ void swing_manager_task(void *pvParameters)
                 if (impact_pending)
                 {
                     impact_pending = 0;
+
+                    event_impact_index = impact_index;   // lås index til dette event
+
                     post_counter = 0;
+                    cooldown_counter = 0;
+
                     state = STATE_CAPTURE_POST;
 
                     ESP_LOGI(TAG, "Impact event started");
+                    ESP_LOGI(TAG, "Impact index: %lu", (unsigned long)event_impact_index);
                 }
 
                 break;
@@ -83,20 +97,23 @@ void swing_manager_task(void *pvParameters)
 
                 post_counter++;
 
-                if (post_counter >= POST_SAMPLES)
-                {
-                    copy_event_from_ringbuffer();
-                    state = STATE_PROCESS;
-                }
+            if (post_counter >= POST_SAMPLES)
+            {
+                post_counter = 0;
+                copy_event_from_ringbuffer();
+                state = STATE_PROCESS;
+            }
 
                 break;
-
 
             case STATE_PROCESS:
             {
                 ESP_LOGI(TAG, "Processing swing event");
 
                 float max_acc_energy = 0.0f;
+
+                static uint16_t s_event_id = 0;
+                const uint16_t event_id = ++s_event_id;
 
                 for (uint32_t i = 0; i < EVENT_SIZE; i++)
                 {
@@ -113,7 +130,55 @@ void swing_manager_task(void *pvParameters)
                 }
 
                 ESP_LOGI(TAG, "Max raw acc energy: %.2f", max_acc_energy);
-                
+
+
+                // META data                
+                ble_swing_meta_pkt_t meta;
+                memset(&meta, 0, sizeof(meta));
+
+                meta.event_id = event_id;
+                meta.packet_type = BLE_PKT_TYPE_META;
+
+                meta.swing_id = current_event_timing.swing_id;
+                meta.sample_rate_hz = IMU_SAMPLE_RATE_HZ;
+                meta.total_samples = EVENT_SIZE;
+
+                meta.pre_samples = PRE_SAMPLES;
+                meta.post_samples = POST_SAMPLES;
+                meta.impact_index_in_event = PRE_SAMPLES;
+
+                meta.address_start_us   = current_event_timing.address_start_us;
+                meta.backswing_start_us = current_event_timing.backswing_start_us;
+                meta.forward_start_us   = current_event_timing.forward_start_us;
+                meta.impact_us          = current_event_timing.impact_us;
+                meta.follow_start_us    = current_event_timing.follow_start_us;
+                meta.end_us             = current_event_timing.end_us;
+
+                meta.event_start_us = swing_buffer[0].timestamp_us;
+                meta.event_end_us   = swing_buffer[EVENT_SIZE - 1].timestamp_us;
+
+
+                if (current_event_timing_valid)
+                {
+                    int meta_rc = ble_manager_notify_swing_meta_rc(&meta);
+                    if (meta_rc != 0)
+                    {
+                        ESP_LOGW(TAG, "Failed to send META packet rc=%d event=%u", meta_rc, event_id);
+                    }
+                    else
+                    {
+                        ESP_LOGI(TAG, "META packet sent for event %u", event_id);
+                    }
+
+                    vTaskDelay(pdMS_TO_TICKS(20));
+                }
+                else
+                {
+                    ESP_LOGW(TAG, "No swing timing metadata available for event %u", event_id);
+                }
+
+
+                // IMU data                
                 for (uint32_t i = 0; i < 10 && i < EVENT_SIZE; i++)
                                 {
                                     ESP_LOGI(TAG,
@@ -131,15 +196,24 @@ void swing_manager_task(void *pvParameters)
                 int64_t tImpact = swing_buffer[PRE_SAMPLES].timestamp_us;
                 int64_t tEnd = swing_buffer[EVENT_SIZE-1].timestamp_us;
 
+                ESP_LOGI(TAG, "write_index now: %u", imu_get_ringbuffer()->write_index);
+                ESP_LOGI(TAG, "event_impact_index: %u", event_impact_index);
+                ESP_LOGI(TAG, "start index: %u",
+                        (event_impact_index + IMU_BUFFER_SIZE - PRE_SAMPLES) % IMU_BUFFER_SIZE);                
+
                 ESP_LOGI(TAG, "Pre duration:  %.3f sec", (tImpact - t0) / 1000000.0);
                 ESP_LOGI(TAG, "Post duration: %.3f sec", (tEnd - tImpact) / 1000000.0);
                 ESP_LOGI(TAG, "Total duration: %.3f sec", (tEnd - t0) / 1000000.0);
 
+                //  BLE streaming af event data + metadata
+                
 
-                 /* -------- BLE STREAMING -------- */
+                
 
-                static uint16_t s_event_id = 0;
-                const uint16_t event_id = ++s_event_id;
+
+                 /* -------- BLE STREAMING - IMU data -------- */
+
+                
 
                 uint16_t seq = 0;
 
@@ -158,6 +232,7 @@ void swing_manager_task(void *pvParameters)
                 {
                     ble_imu_pkt_t pkt;
                     pkt.event_id = event_id;
+                    pkt.packet_type = BLE_PKT_TYPE_IMU;
                     pkt.sample_count = 0;
 
                     /* nulstil resten for pænhed */

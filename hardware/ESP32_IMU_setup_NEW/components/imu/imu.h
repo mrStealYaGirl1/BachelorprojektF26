@@ -9,8 +9,8 @@
    CONFIGURATION
 ===================================================== */
 
-#define IMU_SAMPLE_RATE_HZ      250
-#define IMU_TOTAL_SECONDS       8      // 5 sec pre + 3 sec post
+#define IMU_SAMPLE_RATE_HZ      200     // 200 Hz
+#define IMU_TOTAL_SECONDS       6      // 3 sec pre + 2 sec post + 1 sec margin = 6 seconds for ringbuffer
 #define IMU_BUFFER_SIZE  (IMU_SAMPLE_RATE_HZ * IMU_TOTAL_SECONDS)
 
 
@@ -29,7 +29,7 @@ typedef struct
     int16_t gy;
     int16_t gz;
 
-    uint32_t timestamp_us;
+    uint64_t timestamp_us;
 
 } imu_sample_t;
 #pragma pack(pop)
@@ -88,6 +88,35 @@ typedef struct
 
 } session_header_t;
 #pragma pack(pop)
+
+
+/* =====================================================
+   SWING TIMING (REAL-TIME DATA)
+===================================================== */
+#pragma pack(push, 1)
+typedef struct
+{
+    uint32_t swing_id;
+
+    // saves time in mikroseconds
+    uint64_t address_start_us;       
+    uint64_t backswing_start_us;
+    uint64_t forward_start_us;
+    uint64_t impact_us;
+    uint64_t follow_start_us;
+    uint64_t end_us;
+   
+    // saves index in ringbuffer
+    uint16_t address_start_idx;
+    uint16_t backswing_start_idx;
+    uint16_t forward_start_idx;
+    uint16_t impact_idx;
+    uint16_t follow_start_idx;
+    uint16_t end_idx;
+
+} swing_timing_t;
+#pragma pack(pop)
+
 
 
 /* =====================================================
