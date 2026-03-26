@@ -19,7 +19,7 @@ export default function TabsLayout() {
   }
 
   if (!session) {
-    return <Redirect href="/(auth)" />;
+    return <Redirect href="/(auth)/welcome" />;
   }
   
   return (
@@ -38,7 +38,7 @@ export default function TabsLayout() {
       }
     }}>
       <Tabs.Screen 
-        name="index" 
+        name="home" 
         options={{
           tabBarIcon: ({ focused }) => (
             <View style={{ 
@@ -88,7 +88,7 @@ export default function TabsLayout() {
           }} 
         />
         <Tabs.Screen 
-        name="startTraining" 
+        name="start-training" 
         options={{
           tabBarIcon: ({ focused }) => (
             <View style={{ 
@@ -158,6 +158,13 @@ export default function TabsLayout() {
               </View>
             ),
           }} 
+        />
+        <Tabs.Screen
+        name="activity-details"
+        options={{
+          href: null,
+          headerShown: false,
+        }}
         />
     </Tabs>
   );

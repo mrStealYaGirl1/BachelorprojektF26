@@ -64,12 +64,12 @@ export default function SignUpScreen() {
 
 		if (data.session) {
 			Alert.alert('Succes', 'Din konto er oprettet')
-			router.replace('/(tabs)')
+			router.replace('/home')
 			return
 		}
 
 		Alert.alert('Konto oprettet', 'Log ind med din nye bruger for at fortsætte.')
-		router.replace('/(auth)/login')
+		router.replace('/login')
 	}
 
 	return (

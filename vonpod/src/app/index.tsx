@@ -14,8 +14,8 @@ export default function IndexPage() {
   }
 
   if (!session) {
-    return <Redirect href="/(auth)" />;
+    return <Redirect href="/(auth)/welcome" />;
   }
 
-  return <Redirect href="/(tabs)" />;
+  return <Redirect href="/(tabs)/home" />;
 }
