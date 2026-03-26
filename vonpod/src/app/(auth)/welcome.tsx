@@ -19,7 +19,7 @@ export default function AuthLandingScreen() {
             <Text style={styles.buttonText}>Login</Text>
           </Pressable>
 
-          <Pressable style={styles.button} onPress={() => router.push('/(auth)/signup')}>
+          <Pressable style={styles.button} onPress={() => router.push('/signup')}>
             <Text style={styles.buttonText}>Create an Account</Text>
           </Pressable>
         </View>

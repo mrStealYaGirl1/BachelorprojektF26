@@ -29,7 +29,7 @@ export default function AuthScreen() {
     }
 
     Alert.alert('Succes', 'Du er logget ind')
-    router.replace('/(tabs)')
+    router.replace('/home')
   }
 
   return (
@@ -67,7 +67,7 @@ export default function AuthScreen() {
           <Text style={styles.primaryButtonText}>{loading ? 'Logger ind...' : 'Login'}</Text>
         </Pressable>
 
-        <Pressable style={styles.secondaryButton} onPress={() => router.push('/(auth)/signup')}>
+        <Pressable style={styles.secondaryButton} onPress={() => router.push('/signup')}>
           <Text style={styles.secondaryButtonText}>Create an account</Text>
         </Pressable>
       </View>
