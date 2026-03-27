@@ -160,17 +160,27 @@ void swing_manager_task(void *pvParameters)
 
                 if (current_event_timing_valid)
                 {
-                    int meta_rc = ble_manager_notify_swing_meta_rc(&meta);
-                    if (meta_rc != 0)
+                    bool meta_queued = ble_manager_send_swing_meta(&meta);
+                    if (!meta_queued)
                     {
-                        ESP_LOGW(TAG, "Failed to send META packet rc=%d event=%u", meta_rc, event_id);
+                        ESP_LOGW(TAG, "Failed to queue META packet event=%u", event_id);
                     }
                     else
                     {
-                        ESP_LOGI(TAG, "META packet sent for event %u", event_id);
+                        ESP_LOGI(TAG, "META packet queued for event %u", event_id);
                     }
+                    
+                    // int meta_rc = ble_manager_notify_swing_meta_rc(&meta);
+                    // if (meta_rc != 0)
+                    // {
+                    //     ESP_LOGW(TAG, "Failed to send META packet rc=%d event=%u", meta_rc, event_id);
+                    // }
+                    // else
+                    // {
+                    //     ESP_LOGI(TAG, "META packet sent for event %u", event_id);
+                    // }
 
-                    vTaskDelay(pdMS_TO_TICKS(20));
+                    vTaskDelay(pdMS_TO_TICKS(100));
                 }
                 else
                 {

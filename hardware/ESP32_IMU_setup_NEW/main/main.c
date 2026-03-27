@@ -14,7 +14,7 @@ void app_main(void)
     ESP_LOGI(TAG, "ESP32-FW starter");
 
     ble_manager_init();     // starter NimBLE + advertising (connectable)
-    ble_manager_start_imu_tx_task(); // starter intern task + queue til at sende IMU data via BLE
+    ble_manager_start_tx_task(); // starter intern task + queue til at sende IMU data via BLE
     
     imu_init();             // starter IMU + swing detection
 
