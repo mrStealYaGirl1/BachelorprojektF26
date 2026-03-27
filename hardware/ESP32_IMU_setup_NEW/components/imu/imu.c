@@ -88,7 +88,13 @@ static uint8_t zero_cross_confirm_count = 0;
 #define GZ_ZERO_CROSS_BAND_DPS      5.0f
 #define ZERO_CROSS_CONFIRM_SAMPLES  2
 
+#define ADDRESS_WRONG_DIR_DPS            -10.0f
+#define ADDRESS_WRONG_ROT_GYRO_MAG_DPS    30.0f
+#define ADDRESS_WRONG_ROT_GZ_MAX_DPS       8.0f
+#define ADDRESS_OTHER_AXIS_DPS            60.0f
+#define ADDRESS_WRONG_CONFIRM_SAMPLES      3
 
+static uint8_t address_wrong_dir_count = 0;
 
 /* ====================================================
    BIAS
@@ -106,6 +112,8 @@ static void imu_calibrate(void);
 static void reset_current_swing(void);
 static uint8_t detect_swing(float acc_dynamic,
                             float gyro_mag,
+                            float gx_dps,
+                            float gy_dps,
                             float gz_dps,
                             uint32_t sample_idx);
 
@@ -372,6 +380,8 @@ static uint32_t peak_print_counter = 0;
 
 static uint8_t detect_swing(float acc_dynamic,
                             float gyro_mag,
+                            float gx_dps,
+                            float gy_dps,
                             float gz_dps,
                             uint32_t sample_idx)
 {
@@ -404,8 +414,8 @@ static uint8_t detect_swing(float acc_dynamic,
             else
                 still_counter = 0;
 
-            /* Hvis køllen har været stille i 1 sek → ADDRESS */
-            if (still_counter > 200)  // 1 sekund ved 200 Hz
+            /* Hvis køllen har været stille i 0.5 sek → ADDRESS */
+            if (still_counter > 100)
             {
                 swing_state = SWING_ADDRESS;
                 still_counter = 0;
@@ -414,6 +424,7 @@ static uint8_t detect_swing(float acc_dynamic,
                 backswing_confirm_count = 0;
                 zero_cross_confirm_count = 0;
                 backswing_reset_confirm_count = 0;
+                address_wrong_dir_count = 0;
 
                 reset_current_swing();
                 current_swing.swing_id = next_swing_id++;
@@ -432,13 +443,8 @@ static uint8_t detect_swing(float acc_dynamic,
         ----------------------------------------- */
 
         case SWING_ADDRESS:
-
-            /*
-                Brug gz direkte:
-                backswing starter når gz bliver tydeligt positiv
-                TUNE DENNE TÆRSKEL
-            */
-             /* backswing starter når gz bliver tydeligt positiv */
+        {
+            /* backswing starter når gz bliver tydeligt positiv */
             if (gz_dps > GZ_BACKSWING_START_DPS)
             {
                 backswing_confirm_count++;
@@ -448,31 +454,13 @@ static uint8_t detect_swing(float acc_dynamic,
                 backswing_confirm_count = 0;
             }
 
-            // if (backswing_confirm_count >= SWING_CONFIRM_SAMPLES)
-            // {
-            //     swing_state = SWING_BACKSWING;
-            //     backswing_confirm_count = 0;
-            //     forward_confirm_count = 0;
-            //     forward_fall_confirm_count = 0;
-
-            //     uint32_t start_idx = find_backswing_start_idx(sample_idx);
-
-            //     current_swing.backswing_start_idx = start_idx;
-            //     current_swing.backswing_start_us = imu_rb.buffer[start_idx].timestamp_us;
-
-            //     backswing_peak_gz = gz_dps;
-            //     backswing_peak_idx = sample_idx;
-
-            //     ESP_LOGI("SWING", "BACKSWING (gz=%.1f)", gz_dps);
-            //     break;
-            // }
-
             if (backswing_confirm_count >= SWING_CONFIRM_SAMPLES)
             {
                 swing_state = SWING_BACKSWING;
                 backswing_confirm_count = 0;
                 forward_confirm_count = 0;
                 forward_fall_confirm_count = 0;
+                address_wrong_dir_count = 0;
 
                 uint32_t trigger_idx =
                     (sample_idx + IMU_BUFFER_SIZE - (SWING_CONFIRM_SAMPLES - 1)) % IMU_BUFFER_SIZE;
@@ -489,27 +477,104 @@ static uint8_t detect_swing(float acc_dynamic,
                 break;
             }
 
-            /* hvis brugeren bliver stille igen -> tilbage til IDLE */
-            if (gyro_mag < GZ_IDLE_DPS)
+            /* ugyldige bevægelser i ADDRESS -> reset til IDLE */
+            bool wrong_direction =
+                (gz_dps < ADDRESS_WRONG_DIR_DPS);   // bevæges forward
+
+            bool wrong_rotation_pattern =
+                (gyro_mag > ADDRESS_WRONG_ROT_GYRO_MAG_DPS &&   // for kraftig rotation
+                gz_dps < ADDRESS_WRONG_ROT_GZ_MAX_DPS);         // rotation i forkert retning (fx negativ gz)
+
+            bool too_much_other_axis =
+                (fabsf(gx_dps) > ADDRESS_OTHER_AXIS_DPS ||      // for kraftig rotation i x aksen
+                fabsf(gy_dps) > ADDRESS_OTHER_AXIS_DPS);        // for kraftig rotation i y aksen
+
+            if (wrong_direction || wrong_rotation_pattern || too_much_other_axis)
             {
-                address_still_counter++;
+                address_wrong_dir_count++;
             }
             else
             {
-                address_still_counter = 0;
+                address_wrong_dir_count = 0;
             }
 
-            if (address_still_counter >= ADDRESS_STILL_RESET_SAMPLES)
+            if (address_wrong_dir_count >= ADDRESS_WRONG_CONFIRM_SAMPLES)
             {
                 swing_state = SWING_IDLE;
                 backswing_confirm_count = 0;
                 forward_confirm_count = 0;
+                forward_fall_confirm_count = 0;
+                address_wrong_dir_count = 0;
                 address_still_counter = 0;
 
-                ESP_LOGI("SWING", "RESET from ADDRESS to IDLE");
+                ESP_LOGI("SWING",
+                        "RESET from ADDRESS to IDLE (wrong move: gz=%.1f gx=%.1f gy=%.1f gyro_mag=%.1f)",
+                        gz_dps, gx_dps, gy_dps, gyro_mag);
             }
 
             break;
+        }
+
+        // case SWING_ADDRESS:
+
+        //     /*
+        //         Brug gz direkte:
+        //         backswing starter når gz bliver tydeligt positiv
+        //         TUNE DENNE TÆRSKEL
+        //     */
+        //      /* backswing starter når gz bliver tydeligt positiv */
+        //     if (gz_dps > GZ_BACKSWING_START_DPS)
+        //     {
+        //         backswing_confirm_count++;
+        //     }
+        //     else
+        //     {
+        //         backswing_confirm_count = 0;
+        //     }
+
+        //     if (backswing_confirm_count >= SWING_CONFIRM_SAMPLES)
+        //     {
+        //         swing_state = SWING_BACKSWING;
+        //         backswing_confirm_count = 0;
+        //         forward_confirm_count = 0;
+        //         forward_fall_confirm_count = 0;
+
+        //         uint32_t trigger_idx =
+        //             (sample_idx + IMU_BUFFER_SIZE - (SWING_CONFIRM_SAMPLES - 1)) % IMU_BUFFER_SIZE;
+
+        //         uint32_t start_idx = find_backswing_start_idx(trigger_idx);
+
+        //         current_swing.backswing_start_idx = start_idx;
+        //         current_swing.backswing_start_us = imu_rb.buffer[start_idx].timestamp_us;
+
+        //         backswing_peak_gz = gz_dps;
+        //         backswing_peak_idx = sample_idx;
+
+        //         ESP_LOGI("SWING", "BACKSWING (gz=%.1f)", gz_dps);
+        //         break;
+        //     }
+
+        //     /* hvis brugeren bliver stille igen -> tilbage til IDLE */
+        //     if (gyro_mag < GZ_IDLE_DPS)
+        //     {
+        //         address_still_counter++;
+        //     }
+        //     else
+        //     {
+        //         address_still_counter = 0;
+        //     }
+
+        //     if (address_still_counter >= ADDRESS_STILL_RESET_SAMPLES)
+        //     {
+        //         swing_state = SWING_IDLE;
+        //         backswing_confirm_count = 0;
+        //         forward_confirm_count = 0;
+        //         address_still_counter = 0;
+
+        //         ESP_LOGI("SWING", "RESET from ADDRESS to IDLE");
+        //     }
+
+        //     break;
 
         //     /* Hvis rotation bliver større → BACKSWING */
         //     if (gyro_mag > 20.0f)
@@ -821,7 +886,7 @@ void imu_task(void *pvParameters)
                     ble_was_busy = false;
                 }
 
-                if (detect_swing(acc_dynamic, last_gyro_mag_dps, gz_dps, sample_idx))
+                if (detect_swing(acc_dynamic, last_gyro_mag_dps, gx_dps, gy_dps, gz_dps, sample_idx))
                 {
                     swing_manager_notify_impact(current_swing.impact_idx);
                 }
