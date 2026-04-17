@@ -5,6 +5,7 @@ export const IMU_EVENTS_STORAGE_KEY = 'vonpod:imu-events'
 
 export type StoredImuEvent = {
   id: string
+  localEventId?: number
   eventId: number
   savedAt: string
   sampleCount: number
@@ -19,6 +20,18 @@ export async function loadStoredEvents(): Promise<StoredImuEvent[]> {
   }
 
   return JSON.parse(raw) as StoredImuEvent[]
+}
+
+export function getHighestLocalEventId(events: StoredImuEvent[]): number {
+  let highest = 0
+
+  for (const event of events) {
+    if (typeof event.localEventId === 'number' && Number.isFinite(event.localEventId)) {
+      highest = Math.max(highest, event.localEventId)
+    }
+  }
+
+  return highest
 }
 
 export async function saveStoredEvents(events: StoredImuEvent[]): Promise<void> {

@@ -1,30 +1,117 @@
+import { useCallback, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
+import { useFocusEffect } from 'expo-router';
 import FeatureCard from '../../components/cards/FeatureCard';
+import { loadStoredEvents, type StoredImuEvent } from '../../lib/imuStorage';
+import { getLatestValidTempo } from '../../features/puttMetrics/calculateTempo';
+import { useTraining } from '../../providers/TrainingProvider';
+
+function formatDuration(totalSeconds: number): string {
+  const seconds = Math.max(0, Math.floor(totalSeconds));
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remainingSeconds = seconds % 60;
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m ${remainingSeconds}s`;
+  }
+
+  return `${minutes}m ${remainingSeconds}s`;
+}
 
 export default function StartTrainingScreen() {
+  const {
+    isTraining,
+    elapsedSeconds,
+    puttEventIds,
+    selectedPuttIndex,
+    canGoPrevious,
+    canGoNext,
+    selectPreviousPutt,
+    selectNextPutt,
+  } = useTraining();
+
+  const [events, setEvents] = useState<StoredImuEvent[]>([]);
+  const [tempoLabel, setTempoLabel] = useState('No data');
+
+  const refreshEvents = useCallback(async () => {
+    try {
+      const parsed = await loadStoredEvents();
+      setEvents(parsed);
+    } catch {
+      setEvents([]);
+    }
+  }, []);
+
+  const visiblePuttCount = Math.max(1, puttEventIds.length);
+  const activeDisplayIndex = Math.min(selectedPuttIndex, visiblePuttCount - 1);
+  const activeEventId = puttEventIds[selectedPuttIndex];
+
+  const selectedEvent = useMemo(
+    () => events.find((event) => event.id === activeEventId) ?? null,
+    [events, activeEventId]
+  );
+
+  const puttNumbers = useMemo(
+    () => Array.from({ length: visiblePuttCount }, (_, index) => index + 1),
+    [visiblePuttCount]
+  );
+
+  const refreshTempo = useCallback(() => {
+    if (!selectedEvent) {
+      setTempoLabel('-.-');
+      return;
+    }
+
+    const tempo = getLatestValidTempo([selectedEvent]);
+    setTempoLabel(tempo ? tempo.ratioLabel : '-.-');
+  }, [selectedEvent]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void refreshEvents();
+      void refreshTempo();
+
+      const intervalId = setInterval(() => {
+        void refreshEvents();
+        void refreshTempo();
+      }, 1000);
+
+      return () => {
+        clearInterval(intervalId);
+      };
+    }, [refreshEvents, refreshTempo])
+  );
+
   return (
     <View style={styles.screen}>
       <Text style={styles.logo}>vonpod</Text>
 
+      <Text style={styles.sessionState}>{isTraining ? 'Session i gang' : 'Ingen aktiv session'}</Text>
+      <Text style={styles.sessionTimer}>Timer: {formatDuration(elapsedSeconds)}</Text>
+
       <View style={styles.navigator}>
-        <Pressable style={styles.arrowButton}>
+        <Pressable
+          style={[styles.arrowButton, !canGoPrevious && styles.arrowButtonDisabled]}
+          onPress={selectPreviousPutt}
+          disabled={!canGoPrevious}
+        >
           <Text style={styles.arrow}>‹</Text>
         </Pressable>
 
         <View style={styles.puttNumbers}>
-          <Text style={styles.inactivePutt}>1</Text>
-          <Text style={styles.inactivePutt}>2</Text>
-          <Text style={styles.inactivePutt}>3</Text>
-          <Text style={styles.inactivePutt}>4</Text>
-          <Text style={styles.inactivePutt}>5</Text>
-          <Text style={styles.inactivePutt}>6</Text>
-          <Text style={styles.activePutt}>7</Text>
-          <Text style={styles.inactivePutt}>8</Text>
-          <Text style={styles.inactivePutt}>9</Text>
-          <Text style={styles.inactivePutt}>10</Text>
+          {puttNumbers.map((number, index) => (
+            <Text key={`putt-${number}`} style={index === activeDisplayIndex ? styles.activePutt : styles.inactivePutt}>
+              {number}
+            </Text>
+          ))}
         </View>
 
-        <Pressable style={styles.arrowButton}>
+        <Pressable
+          style={[styles.arrowButton, !canGoNext && styles.arrowButtonDisabled]}
+          onPress={selectNextPutt}
+          disabled={!canGoNext}
+        >
           <Text style={styles.arrow}>›</Text>
         </Pressable>
       </View>
@@ -36,32 +123,32 @@ export default function StartTrainingScreen() {
         <View style={styles.grid}>
           <FeatureCard
             title="Tempo"
-            value="2.2:1"
+            value={tempoLabel}
             unitLabel="ratio"
           />
           <FeatureCard
             title="Backswing Length"
-            value="35"
+            value={selectedEvent ? String(selectedEvent.sampleCount) : '-.-'}
             unitLabel="cm"
           />
           <FeatureCard
             title="Back Stroke Rotation"
-            value="2.7"
+            value={selectedEvent?.meta ? selectedEvent.meta.sampleRateHz.toString() : '-.-'}
             unitLabel="deg · open"
           />
           <FeatureCard
             title="Forward Stroke Rotation"
-            value="2.6"
+            value={selectedEvent?.meta ? selectedEvent.meta.swingId.toString() : '-.-'}
             unitLabel="deg · closed"
           />
           <FeatureCard
             title="Lie Impact Angle"
-            value="0.7"
+            value={selectedEvent?.meta ? selectedEvent.meta.impactIndexInEvent.toString() : '-.-'}
             unitLabel="deg · toe up"
           />
           <FeatureCard
             title="Face Angle at Impact"
-            value="0.1"
+            value={selectedEvent ? selectedEvent.samples.length.toString() : '-.-'}
             unitLabel="deg · open"
           />
         </View>
@@ -99,10 +186,28 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 12,
   },
+  sessionState: {
+    marginTop: 6,
+    textAlign: 'center',
+    fontSize: 14,
+    color: '#4a4a4a',
+    fontFamily: 'RethinkSans_500Medium',
+  },
+  sessionTimer: {
+    marginTop: 2,
+    marginBottom: 10,
+    textAlign: 'center',
+    fontSize: 16,
+    color: '#1c1c1c',
+    fontFamily: 'Montserrat_600SemiBold',
+  },
   arrowButton: {
     width: 28,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  arrowButtonDisabled: {
+    opacity: 0.35,
   },
   arrow: {
     fontSize: 34,

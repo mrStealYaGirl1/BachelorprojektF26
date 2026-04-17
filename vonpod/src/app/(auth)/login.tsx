@@ -2,10 +2,12 @@ import React, { useState } from 'react'
 import { Alert, ImageBackground, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
 import { supabase } from '../../lib/supabase'
 import { router } from 'expo-router'
+import Ionicons from '@expo/vector-icons/Ionicons'
 
 export default function AuthScreen() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
 
   const signIn = async () => {
@@ -41,27 +43,40 @@ export default function AuthScreen() {
       <View style={styles.overlay} />
 
       <View style={styles.sheet}>
+        <Pressable style={styles.backButton} onPress={() => router.back()}>
+          <Ionicons name='chevron-back' size={26} color='#7b7b7b' />
+        </Pressable>
+
         <Text style={styles.title}>Login</Text>
 
-        <TextInput
-          placeholder="Enter email"
-          autoCapitalize="none"
-          keyboardType="email-address"
-          value={email}
-          onChangeText={setEmail}
-          style={styles.input}
-          placeholderTextColor="#7f7f7f"
-        />
+        <View style={styles.inputRow}>
+          <Ionicons name='person-outline' size={20} color='#8c8c8c' style={styles.inputLeftIcon} />
+          <TextInput
+            placeholder="Enter Email or Username"
+            autoCapitalize="none"
+            keyboardType="email-address"
+            value={email}
+            onChangeText={setEmail}
+            style={styles.inputField}
+            placeholderTextColor="#7f7f7f"
+          />
+        </View>
 
-        <TextInput
-          placeholder="Enter password"
-          autoCapitalize="none"
-          secureTextEntry
-          value={password}
-          onChangeText={setPassword}
-          style={styles.input}
-          placeholderTextColor="#7f7f7f"
-        />
+        <View style={styles.inputRow}>
+          <Ionicons name='lock-closed-outline' size={20} color='#8c8c8c' style={styles.inputLeftIcon} />
+          <TextInput
+            placeholder="Enter Password"
+            autoCapitalize="none"
+            secureTextEntry={!showPassword}
+            value={password}
+            onChangeText={setPassword}
+            style={styles.inputField}
+            placeholderTextColor="#7f7f7f"
+          />
+          <Pressable style={styles.inputRightButton} onPress={() => setShowPassword((prev) => !prev)}>
+            <Ionicons name={showPassword ? 'eye-outline' : 'eye-off-outline'} size={20} color='#8c8c8c' />
+          </Pressable>
+        </View>
 
         <Pressable style={[styles.primaryButton, loading && styles.buttonDisabled]} onPress={signIn} disabled={loading}>
           <Text style={styles.primaryButtonText}>{loading ? 'Logger ind...' : 'Login'}</Text>
@@ -78,38 +93,70 @@ export default function AuthScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    justifyContent: 'flex-end',
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(22, 38, 19, 0.30)',
   },
   sheet: {
-    marginTop: '50%',
-    flex: 1,
+    marginTop: '56%',
     backgroundColor: '#f7f7f7',
     borderTopLeftRadius: 36,
     borderTopRightRadius: 36,
     paddingHorizontal: 24,
     paddingTop: 28,
+    paddingBottom: 48,
+  },
+  backButton: {
+    position: 'absolute',
+    top: 26,
+    left: 18,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2,
   },
   title: {
-    fontSize: 32,
-    fontWeight: '700',
+    fontSize: 24,
+    fontFamily: 'RethinkSans_600SemiBold',
     color: '#101010',
     marginBottom: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    alignSelf: 'center',
   },
-  input: {
+  inputRow: {
     borderWidth: 1,
     borderColor: '#d1d1d1',
     borderRadius: 24,
-    paddingHorizontal: 16,
-    minHeight: 48,
+    minHeight: 45,
     backgroundColor: '#f1f1f1',
     marginBottom: 12,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  inputLeftIcon: {
+    marginRight: 8,
+  },
+  inputField: {
+    flex: 1,
+    fontSize: 12,
+    fontFamily: 'RethinkSans_400Regular',
+  },
+  inputRightButton: {
+    width: 28,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
   },
   primaryButton: {
     marginTop: 8,
-    minHeight: 52,
+    minHeight: 45,
     borderRadius: 999,
     backgroundColor: '#5e7f56',
     justifyContent: 'center',
@@ -117,12 +164,13 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: {
     color: '#ffffff',
+    fontFamily: 'RethinkSans_600SemiBold',
     fontSize: 20,
     fontWeight: '600',
   },
   secondaryButton: {
     marginTop: 12,
-    minHeight: 52,
+    minHeight: 45,
     borderRadius: 999,
     backgroundColor: '#ffffff',
     borderWidth: 1,
