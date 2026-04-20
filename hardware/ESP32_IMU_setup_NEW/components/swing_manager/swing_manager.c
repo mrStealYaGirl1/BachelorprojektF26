@@ -9,6 +9,8 @@
 
 static const char *TAG = "SWING";
 
+#define BLE_DEBUG_PIN GPIO_NUM_4
+
 /* 200 Hz */
 #define PRE_SAMPLES    600   // 3 sek
 #define POST_SAMPLES   400    // 2 sek
@@ -87,7 +89,7 @@ void swing_manager_task(void *pvParameters)
                     state = STATE_CAPTURE_POST;
 
                     ESP_LOGI(TAG, "Impact event started");
-                    ESP_LOGI(TAG, "Impact index: %lu", (unsigned long)event_impact_index);
+                    //ESP_LOGI(TAG, "Impact index: %lu", (unsigned long)event_impact_index);
                 }
 
                 break;
@@ -115,23 +117,22 @@ void swing_manager_task(void *pvParameters)
                 static uint16_t s_event_id = 0;
                 const uint16_t event_id = ++s_event_id;
 
-                for (uint32_t i = 0; i < EVENT_SIZE; i++)
-                {
-                    float ax = swing_buffer[i].ax;
-                    float ay = swing_buffer[i].ay;
-                    float az = swing_buffer[i].az;
+                // for (uint32_t i = 0; i < EVENT_SIZE; i++)
+                // {
+                //     float ax = swing_buffer[i].ax;
+                //     float ay = swing_buffer[i].ay;
+                //     float az = swing_buffer[i].az;
 
-                    float mag = ax * ax + ay * ay + az * az;
+                //     float mag = ax * ax + ay * ay + az * az;
 
-                    if (mag > max_acc_energy)
-                    {
-                        max_acc_energy = mag;
-                    }
-                }
+                //     if (mag > max_acc_energy)
+                //     {
+                //         max_acc_energy = mag;
+                //     }
+                // }
 
-                ESP_LOGI(TAG, "Max raw acc energy: %.2f", max_acc_energy);
-
-
+                //ESP_LOGI(TAG, "Max raw acc energy: %.2f", max_acc_energy);
+            
                 // META data                
                 ble_swing_meta_pkt_t meta;
                 memset(&meta, 0, sizeof(meta));
@@ -157,20 +158,34 @@ void swing_manager_task(void *pvParameters)
                 meta.event_start_us = swing_buffer[0].timestamp_us;
                 meta.event_end_us   = swing_buffer[EVENT_SIZE - 1].timestamp_us;
 
+                gpio_set_level(BLE_DEBUG_PIN, 1);
 
                 if (current_event_timing_valid)
                 {
-                    int meta_rc = ble_manager_notify_swing_meta_rc(&meta);
-                    if (meta_rc != 0)
+                    bool meta_queued = ble_manager_send_swing_meta(&meta);
+                    if (!meta_queued)
                     {
-                        ESP_LOGW(TAG, "Failed to send META packet rc=%d event=%u", meta_rc, event_id);
+                        ESP_LOGW(TAG, "Failed to queue META packet event=%u", event_id);
                     }
                     else
                     {
-                        ESP_LOGI(TAG, "META packet sent for event %u", event_id);
+                        while (ble_manager_is_imu_tx_busy())    // vent på at BLE er færdig med at sende META før vi starter på IMU data
+                        {
+                            vTaskDelay(pdMS_TO_TICKS(5));
+                        }
                     }
+                    
+                    // int meta_rc = ble_manager_notify_swing_meta_rc(&meta);
+                    // if (meta_rc != 0)
+                    // {
+                    //     ESP_LOGW(TAG, "Failed to send META packet rc=%d event=%u", meta_rc, event_id);
+                    // }
+                    // else
+                    // {
+                    //     ESP_LOGI(TAG, "META packet sent for event %u", event_id);
+                    // }
 
-                    vTaskDelay(pdMS_TO_TICKS(20));
+                    vTaskDelay(pdMS_TO_TICKS(100));
                 }
                 else
                 {
@@ -178,28 +193,28 @@ void swing_manager_task(void *pvParameters)
                 }
 
 
-                // IMU data                
-                for (uint32_t i = 0; i < 10 && i < EVENT_SIZE; i++)
-                                {
-                                    ESP_LOGI(TAG,
-                                    "RAW[%lu] ax=%d ay=%d az=%d gx=%d gy=%d gz=%d",
-                                    (unsigned long)i,
-                                    (int)swing_buffer[i].ax,
-                                    (int)swing_buffer[i].ay,
-                                    (int)swing_buffer[i].az,
-                                    (int)swing_buffer[i].gx,
-                                    (int)swing_buffer[i].gy,
-                                    (int)swing_buffer[i].gz);
-                                }
+                // // IMU data                
+                // for (uint32_t i = 0; i < 10 && i < EVENT_SIZE; i++)
+                //                 {
+                //                     ESP_LOGI(TAG,
+                //                     "RAW[%lu] ax=%d ay=%d az=%d gx=%d gy=%d gz=%d",
+                //                     (unsigned long)i,
+                //                     (int)swing_buffer[i].ax,
+                //                     (int)swing_buffer[i].ay,
+                //                     (int)swing_buffer[i].az,
+                //                     (int)swing_buffer[i].gx,
+                //                     (int)swing_buffer[i].gy,
+                //                     (int)swing_buffer[i].gz);
+                //                 }
 
                 int64_t t0 = swing_buffer[0].timestamp_us;
                 int64_t tImpact = swing_buffer[PRE_SAMPLES].timestamp_us;
                 int64_t tEnd = swing_buffer[EVENT_SIZE-1].timestamp_us;
 
-                ESP_LOGI(TAG, "write_index now: %u", imu_get_ringbuffer()->write_index);
-                ESP_LOGI(TAG, "event_impact_index: %u", event_impact_index);
-                ESP_LOGI(TAG, "start index: %u",
-                        (event_impact_index + IMU_BUFFER_SIZE - PRE_SAMPLES) % IMU_BUFFER_SIZE);                
+                //ESP_LOGI(TAG, "write_index now: %u", imu_get_ringbuffer()->write_index);
+                //ESP_LOGI(TAG, "event_impact_index: %u", event_impact_index);
+                //ESP_LOGI(TAG, "start index: %u",
+                        //(event_impact_index + IMU_BUFFER_SIZE - PRE_SAMPLES) % IMU_BUFFER_SIZE);                
 
                 ESP_LOGI(TAG, "Pre duration:  %.3f sec", (tImpact - t0) / 1000000.0);
                 ESP_LOGI(TAG, "Post duration: %.3f sec", (tEnd - tImpact) / 1000000.0);
@@ -293,6 +308,7 @@ void swing_manager_task(void *pvParameters)
                     if (!queued)
                     {
                         queue_drop_count++;
+                        vTaskDelay(pdMS_TO_TICKS(10));
                         ESP_LOGW(TAG,
                                  "IMU pkt dropped before queue: event=%u seq_start=%u",
                                  event_id,
@@ -301,6 +317,7 @@ void swing_manager_task(void *pvParameters)
                     else
                     {
                         packets_queued++;
+                         vTaskDelay(pdMS_TO_TICKS(2));   // lille pause mellem pakker
                     }
 
                     /* Ingen delay her – pacing styres i BLE TX-tasken */
@@ -310,8 +327,18 @@ void swing_manager_task(void *pvParameters)
 
 
 
-                ESP_LOGI(TAG, "Swing event sent over BLE");
+                
+                
+                /* vent til BLE TX-task faktisk er færdig med at sende */
+                while (ble_manager_is_imu_tx_busy())
+                {
+                    vTaskDelay(pdMS_TO_TICKS(5));
+                }
 
+                gpio_set_level(BLE_DEBUG_PIN, 0);
+                
+                ESP_LOGI(TAG, "Swing event sent over BLE");
+                
                 int64_t ble_end_us = esp_timer_get_time();
                 float ble_time_sec = (ble_end_us - ble_start_us) / 1000000.0f;
                 float packets_per_sec = (ble_time_sec > 0.0f) ? (packets_queued / ble_time_sec) : 0.0f;

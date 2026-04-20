@@ -60,34 +60,41 @@ static float forward_peak_energy = 0.0f;
 static uint32_t forward_peak_idx = 0;
 
 // swing detection state machine thesholds
-#define GZ_BACKSWING_START_DPS   20.0f
+#define GZ_BACKSWING_START_DPS   10.0f
 #define GZ_FORWARD_START_DPS    -20.0f
-#define GZ_IDLE_DPS              5.0f
+#define GZ_IDLE_DPS              3.0f
 
-#define SWING_CONFIRM_SAMPLES    3
+#define SWING_CONFIRM_SAMPLES    2
 #define ADDRESS_RESET_SAMPLES  5
 #define ADDRESS_STILL_RESET_SAMPLES  400 // 2 sekunder ved 200 Hz
 
 static uint8_t backswing_confirm_count = 0;
 static uint8_t forward_confirm_count = 0;
 static uint8_t address_reset_confirm_count = 0;
-static uint8_t address_still_counter = 0;
+static uint16_t address_still_counter = 0;
 
 static uint8_t backswing_reset_confirm_count = 0;
-#define BACKSWING_RESET_SAMPLES  6
+#define BACKSWING_RESET_SAMPLES  20
 
 static float backswing_peak_gz = 0.0f;
 static uint32_t backswing_peak_idx = 0;
 static uint8_t forward_fall_confirm_count = 0;
 
-#define GZ_BACKSWING_START_DPS      20.0f
 #define GZ_BACKSWING_PEAK_DROP_DPS  15.0f
-#define SWING_CONFIRM_SAMPLES       3
+#define IMPACT_FORWARD_GZ_MIN_DPS   -15.0f
 
 static int32_t backswing_zero_cross_idx = 0;
 static uint8_t zero_cross_confirm_count = 0;
 #define GZ_ZERO_CROSS_BAND_DPS      5.0f
 #define ZERO_CROSS_CONFIRM_SAMPLES  2
+
+#define ADDRESS_WRONG_DIR_DPS            -10.0f
+#define ADDRESS_WRONG_ROT_GYRO_MAG_DPS    30.0f
+#define ADDRESS_WRONG_ROT_GZ_MAX_DPS       8.0f
+#define ADDRESS_OTHER_AXIS_DPS            60.0f
+#define ADDRESS_WRONG_CONFIRM_SAMPLES      3
+
+static uint8_t address_wrong_dir_count = 0;
 
 /* ====================================================
    BIAS
@@ -105,6 +112,8 @@ static void imu_calibrate(void);
 static void reset_current_swing(void);
 static uint8_t detect_swing(float acc_dynamic,
                             float gyro_mag,
+                            float gx_dps,
+                            float gy_dps,
                             float gz_dps,
                             uint32_t sample_idx);
 
@@ -299,30 +308,66 @@ static void imu_calibrate(void)
 
 
 
-static uint32_t find_backswing_start_idx(uint32_t current_idx)
+// static uint32_t find_backswing_start_idx(uint32_t current_idx)
+// {
+//     imu_ringbuffer_t *rb = imu_get_ringbuffer();
+
+//     const uint32_t search_back = 40;   // 40 samples = 0.2 s ved 200 Hz
+//     uint32_t best_idx = current_idx;
+
+//     for (uint32_t k = 1; k <= search_back; k++)
+//     {
+//         uint32_t idx = (current_idx + IMU_BUFFER_SIZE - k) % IMU_BUFFER_SIZE;
+
+//         float gz_dps = (rb->buffer[idx].gz * (2000.0f / 32768.0f)) - gyro_bias_z;
+
+//         if (fabsf(gz_dps) < 5.0f)
+//         {
+//             best_idx = idx;
+//             break;
+//         }
+//     }
+
+//     return best_idx;
+// }
+static uint32_t find_backswing_start_idx(uint32_t trigger_idx)
 {
     imu_ringbuffer_t *rb = imu_get_ringbuffer();
 
-    const uint32_t search_back = 40;   // 40 samples = 0.2 s ved 200 Hz
-    uint32_t best_idx = current_idx;
+    const uint32_t search_back = 80;   // 0.4 s ved 200 Hz
+    const float still_thresh = 3.0f;
+    const uint8_t still_needed = 3;
 
-    for (uint32_t k = 1; k <= search_back; k++)
+    uint32_t best_idx = trigger_idx;
+    uint8_t still_count = 0;
+    bool found_still_region = false;
+
+    for (uint32_t k = search_back; k > 0; k--)
     {
-        uint32_t idx = (current_idx + IMU_BUFFER_SIZE - k) % IMU_BUFFER_SIZE;
-
+        uint32_t idx = (trigger_idx + IMU_BUFFER_SIZE - k) % IMU_BUFFER_SIZE;
         float gz_dps = (rb->buffer[idx].gz * (2000.0f / 32768.0f)) - gyro_bias_z;
 
-        if (fabsf(gz_dps) < 5.0f)
+        if (fabsf(gz_dps) < still_thresh)
         {
-            best_idx = idx;
-            break;
+            still_count++;
+            if (still_count >= still_needed)
+            {
+                found_still_region = true;
+            }
+        }
+        else
+        {
+            if (found_still_region)
+            {
+                best_idx = idx;   // første sample hvor bevægelsen starter efter ro
+                break;
+            }
+            still_count = 0;
         }
     }
 
     return best_idx;
 }
-
-
 
 
 /* =====================================================
@@ -335,6 +380,8 @@ static uint32_t peak_print_counter = 0;
 
 static uint8_t detect_swing(float acc_dynamic,
                             float gyro_mag,
+                            float gx_dps,
+                            float gy_dps,
                             float gz_dps,
                             uint32_t sample_idx)
 {
@@ -373,6 +420,11 @@ static uint8_t detect_swing(float acc_dynamic,
                 swing_state = SWING_ADDRESS;
                 still_counter = 0;
                 forward_counter = 0;
+                address_still_counter = 0;
+                backswing_confirm_count = 0;
+                zero_cross_confirm_count = 0;
+                backswing_reset_confirm_count = 0;
+                address_wrong_dir_count = 0;
 
                 reset_current_swing();
                 current_swing.swing_id = next_swing_id++;
@@ -391,13 +443,8 @@ static uint8_t detect_swing(float acc_dynamic,
         ----------------------------------------- */
 
         case SWING_ADDRESS:
-
-            /*
-                Brug gz direkte:
-                backswing starter når gz bliver tydeligt positiv
-                TUNE DENNE TÆRSKEL
-            */
-             /* backswing starter når gz bliver tydeligt positiv */
+        {
+            /* backswing starter når gz bliver tydeligt positiv */
             if (gz_dps > GZ_BACKSWING_START_DPS)
             {
                 backswing_confirm_count++;
@@ -413,8 +460,12 @@ static uint8_t detect_swing(float acc_dynamic,
                 backswing_confirm_count = 0;
                 forward_confirm_count = 0;
                 forward_fall_confirm_count = 0;
+                address_wrong_dir_count = 0;
 
-                uint32_t start_idx = find_backswing_start_idx(sample_idx);
+                uint32_t trigger_idx =
+                    (sample_idx + IMU_BUFFER_SIZE - (SWING_CONFIRM_SAMPLES - 1)) % IMU_BUFFER_SIZE;
+
+                uint32_t start_idx = find_backswing_start_idx(trigger_idx);
 
                 current_swing.backswing_start_idx = start_idx;
                 current_swing.backswing_start_us = imu_rb.buffer[start_idx].timestamp_us;
@@ -426,27 +477,104 @@ static uint8_t detect_swing(float acc_dynamic,
                 break;
             }
 
-            /* hvis brugeren bliver stille igen -> tilbage til IDLE */
-            if (gyro_mag < GZ_IDLE_DPS)
+            /* ugyldige bevægelser i ADDRESS -> reset til IDLE */
+            bool wrong_direction =
+                (gz_dps < ADDRESS_WRONG_DIR_DPS);   // bevæges forward
+
+            bool wrong_rotation_pattern =
+                (gyro_mag > ADDRESS_WRONG_ROT_GYRO_MAG_DPS &&   // for kraftig rotation
+                gz_dps < ADDRESS_WRONG_ROT_GZ_MAX_DPS);         // rotation i forkert retning (fx negativ gz)
+
+            bool too_much_other_axis =
+                (fabsf(gx_dps) > ADDRESS_OTHER_AXIS_DPS ||      // for kraftig rotation i x aksen
+                fabsf(gy_dps) > ADDRESS_OTHER_AXIS_DPS);        // for kraftig rotation i y aksen
+
+            if (wrong_direction || wrong_rotation_pattern || too_much_other_axis)
             {
-                address_still_counter++;
+                address_wrong_dir_count++;
             }
             else
             {
-                address_still_counter = 0;
+                address_wrong_dir_count = 0;
             }
 
-            if (address_still_counter >= ADDRESS_STILL_RESET_SAMPLES)
+            if (address_wrong_dir_count >= ADDRESS_WRONG_CONFIRM_SAMPLES)
             {
                 swing_state = SWING_IDLE;
                 backswing_confirm_count = 0;
                 forward_confirm_count = 0;
+                forward_fall_confirm_count = 0;
+                address_wrong_dir_count = 0;
                 address_still_counter = 0;
 
-                ESP_LOGI("SWING", "RESET from ADDRESS to IDLE");
+                ESP_LOGI("SWING",
+                        "RESET from ADDRESS to IDLE (wrong move: gz=%.1f gx=%.1f gy=%.1f gyro_mag=%.1f)",
+                        gz_dps, gx_dps, gy_dps, gyro_mag);
             }
 
             break;
+        }
+
+        // case SWING_ADDRESS:
+
+        //     /*
+        //         Brug gz direkte:
+        //         backswing starter når gz bliver tydeligt positiv
+        //         TUNE DENNE TÆRSKEL
+        //     */
+        //      /* backswing starter når gz bliver tydeligt positiv */
+        //     if (gz_dps > GZ_BACKSWING_START_DPS)
+        //     {
+        //         backswing_confirm_count++;
+        //     }
+        //     else
+        //     {
+        //         backswing_confirm_count = 0;
+        //     }
+
+        //     if (backswing_confirm_count >= SWING_CONFIRM_SAMPLES)
+        //     {
+        //         swing_state = SWING_BACKSWING;
+        //         backswing_confirm_count = 0;
+        //         forward_confirm_count = 0;
+        //         forward_fall_confirm_count = 0;
+
+        //         uint32_t trigger_idx =
+        //             (sample_idx + IMU_BUFFER_SIZE - (SWING_CONFIRM_SAMPLES - 1)) % IMU_BUFFER_SIZE;
+
+        //         uint32_t start_idx = find_backswing_start_idx(trigger_idx);
+
+        //         current_swing.backswing_start_idx = start_idx;
+        //         current_swing.backswing_start_us = imu_rb.buffer[start_idx].timestamp_us;
+
+        //         backswing_peak_gz = gz_dps;
+        //         backswing_peak_idx = sample_idx;
+
+        //         ESP_LOGI("SWING", "BACKSWING (gz=%.1f)", gz_dps);
+        //         break;
+        //     }
+
+        //     /* hvis brugeren bliver stille igen -> tilbage til IDLE */
+        //     if (gyro_mag < GZ_IDLE_DPS)
+        //     {
+        //         address_still_counter++;
+        //     }
+        //     else
+        //     {
+        //         address_still_counter = 0;
+        //     }
+
+        //     if (address_still_counter >= ADDRESS_STILL_RESET_SAMPLES)
+        //     {
+        //         swing_state = SWING_IDLE;
+        //         backswing_confirm_count = 0;
+        //         forward_confirm_count = 0;
+        //         address_still_counter = 0;
+
+        //         ESP_LOGI("SWING", "RESET from ADDRESS to IDLE");
+        //     }
+
+        //     break;
 
         //     /* Hvis rotation bliver større → BACKSWING */
         //     if (gyro_mag > 20.0f)
@@ -489,7 +617,7 @@ static uint8_t detect_swing(float acc_dynamic,
             */
             if (backswing_peak_gz > GZ_BACKSWING_START_DPS)
             {
-                if (gz_dps < GZ_ZERO_CROSS_BAND_DPS)
+                if (gz_dps < 0.0f)
                 {
                     zero_cross_confirm_count++;
                 }
@@ -522,7 +650,7 @@ static uint8_t detect_swing(float acc_dynamic,
             }
 
             /* reset hvis backswing dør ud */
-            if (fabsf(gz_dps) < GZ_IDLE_DPS && gyro_mag < 10.0f)
+            if (fabsf(gz_dps) < GZ_IDLE_DPS && gyro_mag < 6.0f)
             {
                 backswing_reset_confirm_count++;
             }
@@ -610,7 +738,7 @@ static uint8_t detect_swing(float acc_dynamic,
                 break;
             }
 
-            if (energy_sum > IMPACT_THRESHOLD && dE > IMPACT_RISE_THRESHOLD)
+            if (energy_sum > IMPACT_THRESHOLD && dE > IMPACT_RISE_THRESHOLD && gz_dps < IMPACT_FORWARD_GZ_MIN_DPS)
             {
                 current_swing.impact_idx = forward_peak_idx;
                 current_swing.impact_us = imu_rb.buffer[forward_peak_idx].timestamp_us;
@@ -625,6 +753,22 @@ static uint8_t detect_swing(float acc_dynamic,
 
                 return 1;
             }
+
+            // if (energy_sum > IMPACT_THRESHOLD && dE > IMPACT_RISE_THRESHOLD)
+            // {
+            //     current_swing.impact_idx = forward_peak_idx;
+            //     current_swing.impact_us = imu_rb.buffer[forward_peak_idx].timestamp_us;
+                
+            //     ESP_LOGW("IMPACT_DEBUG", "IMPACT! E=%.2f dE=%.2f", energy_sum, dE);
+
+            //     cooldown_counter = IMPACT_COOLDOWN_SAMPLES;
+            //     swing_state = SWING_FOLLOW;
+
+            //     current_swing.follow_start_us = imu_rb.buffer[sample_idx].timestamp_us;
+            //     current_swing.follow_start_idx = sample_idx;
+
+            //     return 1;
+            // }
 
             if (forward_counter > 200)
             {
@@ -742,7 +886,7 @@ void imu_task(void *pvParameters)
                     ble_was_busy = false;
                 }
 
-                if (detect_swing(acc_dynamic, last_gyro_mag_dps, gz_dps, sample_idx))
+                if (detect_swing(acc_dynamic, last_gyro_mag_dps, gx_dps, gy_dps, gz_dps, sample_idx))
                 {
                     swing_manager_notify_impact(current_swing.impact_idx);
                 }
