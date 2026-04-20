@@ -1,2 +1,0 @@
-event_id,swing_id,sample_rate_hz,total_samples,pre_samples,post_samples,impact_index_in_event,address_start_us,backswing_start_us,forward_start_us,impact_us,follow_start_us,end_us,event_start_us,event_end_us
-2,15,200,1000,600,400,600,291691084,296046084,296766084,297016084,297016084,298376084,294016084,299011084
