@@ -89,7 +89,7 @@ void swing_manager_task(void *pvParameters)
                     state = STATE_CAPTURE_POST;
 
                     ESP_LOGI(TAG, "Impact event started");
-                    ESP_LOGI(TAG, "Impact index: %lu", (unsigned long)event_impact_index);
+                    //ESP_LOGI(TAG, "Impact index: %lu", (unsigned long)event_impact_index);
                 }
 
                 break;
@@ -131,8 +131,8 @@ void swing_manager_task(void *pvParameters)
                     }
                 }
 
-                ESP_LOGI(TAG, "Max raw acc energy: %.2f", max_acc_energy);
-
+                //ESP_LOGI(TAG, "Max raw acc energy: %.2f", max_acc_energy);
+                vTaskDelay(pdMS_TO_TICKS(500));
 
                 // META data                
                 ble_swing_meta_pkt_t meta;
@@ -183,7 +183,7 @@ void swing_manager_task(void *pvParameters)
                     //     ESP_LOGI(TAG, "META packet sent for event %u", event_id);
                     // }
 
-                    vTaskDelay(pdMS_TO_TICKS(200));
+                    vTaskDelay(pdMS_TO_TICKS(500));
                 }
                 else
                 {
@@ -209,10 +209,10 @@ void swing_manager_task(void *pvParameters)
                 int64_t tImpact = swing_buffer[PRE_SAMPLES].timestamp_us;
                 int64_t tEnd = swing_buffer[EVENT_SIZE-1].timestamp_us;
 
-                ESP_LOGI(TAG, "write_index now: %u", imu_get_ringbuffer()->write_index);
-                ESP_LOGI(TAG, "event_impact_index: %u", event_impact_index);
-                ESP_LOGI(TAG, "start index: %u",
-                        (event_impact_index + IMU_BUFFER_SIZE - PRE_SAMPLES) % IMU_BUFFER_SIZE);                
+                //ESP_LOGI(TAG, "write_index now: %u", imu_get_ringbuffer()->write_index);
+                //ESP_LOGI(TAG, "event_impact_index: %u", event_impact_index);
+                //ESP_LOGI(TAG, "start index: %u",
+                        //(event_impact_index + IMU_BUFFER_SIZE - PRE_SAMPLES) % IMU_BUFFER_SIZE);                
 
                 ESP_LOGI(TAG, "Pre duration:  %.3f sec", (tImpact - t0) / 1000000.0);
                 ESP_LOGI(TAG, "Post duration: %.3f sec", (tEnd - tImpact) / 1000000.0);

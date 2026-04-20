@@ -38,7 +38,7 @@ void app_main(void)
 
     while (1)
     {
-        ESP_LOGI(TAG, "System kører");
+        //ESP_LOGI(TAG, "System kører");
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
