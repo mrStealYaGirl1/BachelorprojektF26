@@ -132,8 +132,7 @@ void swing_manager_task(void *pvParameters)
                 // }
 
                 //ESP_LOGI(TAG, "Max raw acc energy: %.2f", max_acc_energy);
-                vTaskDelay(pdMS_TO_TICKS(200));
-
+            
                 // META data                
                 ble_swing_meta_pkt_t meta;
                 memset(&meta, 0, sizeof(meta));
@@ -170,7 +169,10 @@ void swing_manager_task(void *pvParameters)
                     }
                     else
                     {
-                        ESP_LOGI(TAG, "META packet queued for event %u", event_id);
+                        while (ble_manager_is_imu_tx_busy())    // vent på at BLE er færdig med at sende META før vi starter på IMU data
+                        {
+                            vTaskDelay(pdMS_TO_TICKS(5));
+                        }
                     }
                     
                     // int meta_rc = ble_manager_notify_swing_meta_rc(&meta);
@@ -183,7 +185,7 @@ void swing_manager_task(void *pvParameters)
                     //     ESP_LOGI(TAG, "META packet sent for event %u", event_id);
                     // }
 
-                    vTaskDelay(pdMS_TO_TICKS(500));
+                    vTaskDelay(pdMS_TO_TICKS(100));
                 }
                 else
                 {
