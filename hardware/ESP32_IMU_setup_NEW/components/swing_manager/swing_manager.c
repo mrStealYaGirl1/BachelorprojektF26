@@ -9,8 +9,6 @@
 
 static const char *TAG = "SWING";
 
-#define BLE_DEBUG_PIN GPIO_NUM_4
-
 /* 200 Hz */
 #define PRE_SAMPLES    600   // 3 sek
 #define POST_SAMPLES   400    // 2 sek
@@ -158,8 +156,8 @@ void swing_manager_task(void *pvParameters)
                 meta.event_start_us = swing_buffer[0].timestamp_us;
                 meta.event_end_us   = swing_buffer[EVENT_SIZE - 1].timestamp_us;
 
-                gpio_set_level(BLE_DEBUG_PIN, 1);
 
+                 /* -------- BLE STREAMING - META data -------- */
                 if (current_event_timing_valid)
                 {
                     bool meta_queued = ble_manager_send_swing_meta(&meta);
@@ -174,16 +172,6 @@ void swing_manager_task(void *pvParameters)
                             vTaskDelay(pdMS_TO_TICKS(5));
                         }
                     }
-                    
-                    // int meta_rc = ble_manager_notify_swing_meta_rc(&meta);
-                    // if (meta_rc != 0)
-                    // {
-                    //     ESP_LOGW(TAG, "Failed to send META packet rc=%d event=%u", meta_rc, event_id);
-                    // }
-                    // else
-                    // {
-                    //     ESP_LOGI(TAG, "META packet sent for event %u", event_id);
-                    // }
 
                     vTaskDelay(pdMS_TO_TICKS(100));
                 }
@@ -220,15 +208,9 @@ void swing_manager_task(void *pvParameters)
                 ESP_LOGI(TAG, "Post duration: %.3f sec", (tEnd - tImpact) / 1000000.0);
                 ESP_LOGI(TAG, "Total duration: %.3f sec", (tEnd - t0) / 1000000.0);
 
-                //  BLE streaming af event data + metadata
-                
-
-                
 
 
                  /* -------- BLE STREAMING - IMU data -------- */
-
-                
 
                 uint16_t seq = 0;
 
@@ -334,8 +316,6 @@ void swing_manager_task(void *pvParameters)
                 {
                     vTaskDelay(pdMS_TO_TICKS(5));
                 }
-
-                gpio_set_level(BLE_DEBUG_PIN, 0);
                 
                 ESP_LOGI(TAG, "Swing event sent over BLE");
                 
