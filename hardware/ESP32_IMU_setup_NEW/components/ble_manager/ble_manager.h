@@ -2,6 +2,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#include "driver/gpio.h" 
+
 #define BLE_IMU_SAMPLES_PER_PKT 5
 #define BLE_PKT_TYPE_META  1
 #define BLE_PKT_TYPE_IMU   2

@@ -9,6 +9,8 @@
 
 static const char *TAG = "SWING";
 
+#define BLE_DEBUG_PIN GPIO_NUM_4
+
 /* 200 Hz */
 #define PRE_SAMPLES    600   // 3 sek
 #define POST_SAMPLES   400    // 2 sek
@@ -157,6 +159,7 @@ void swing_manager_task(void *pvParameters)
                 meta.event_start_us = swing_buffer[0].timestamp_us;
                 meta.event_end_us   = swing_buffer[EVENT_SIZE - 1].timestamp_us;
 
+                gpio_set_level(BLE_DEBUG_PIN, 1);
 
                 if (current_event_timing_valid)
                 {
@@ -180,7 +183,7 @@ void swing_manager_task(void *pvParameters)
                     //     ESP_LOGI(TAG, "META packet sent for event %u", event_id);
                     // }
 
-                    vTaskDelay(pdMS_TO_TICKS(100));
+                    vTaskDelay(pdMS_TO_TICKS(200));
                 }
                 else
                 {
@@ -320,8 +323,18 @@ void swing_manager_task(void *pvParameters)
 
 
 
-                ESP_LOGI(TAG, "Swing event sent over BLE");
+                
+                
+                /* vent til BLE TX-task faktisk er færdig med at sende */
+                while (ble_manager_is_imu_tx_busy())
+                {
+                    vTaskDelay(pdMS_TO_TICKS(5));
+                }
 
+                gpio_set_level(BLE_DEBUG_PIN, 0);
+                
+                ESP_LOGI(TAG, "Swing event sent over BLE");
+                
                 int64_t ble_end_us = esp_timer_get_time();
                 float ble_time_sec = (ble_end_us - ble_start_us) / 1000000.0f;
                 float packets_per_sec = (ble_time_sec > 0.0f) ? (packets_queued / ble_time_sec) : 0.0f;

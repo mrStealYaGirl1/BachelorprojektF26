@@ -23,7 +23,11 @@
 #include <stdio.h>
 #include <string.h>
 
+
+
 static const char *TAG = "BLE_MANAGER";
+
+#define BLE_DEBUG_PIN GPIO_NUM_4
 
 static bool ble_initialized = false;
 static volatile bool ble_synced = false;
@@ -329,6 +333,22 @@ static void ble_tx_task(void *arg)
 }
 
 
+
+static void ble_debug_pin_init(void)
+{
+    gpio_config_t io_conf = {
+        .pin_bit_mask = (1ULL << BLE_DEBUG_PIN),
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE
+    };
+
+    gpio_config(&io_conf);
+    gpio_set_level(BLE_DEBUG_PIN, 0);
+}
+
+
 /* =========================================================
    INIT
 ========================================================= */
@@ -346,6 +366,8 @@ void ble_manager_init(void)
     }
 
     nimble_port_init();
+
+    ble_debug_pin_init();
 
     // Standard GAP/GATT services
     ble_svc_gap_init();
@@ -439,6 +461,8 @@ bool ble_manager_is_imu_tx_busy(void)
 
     return (s_imu_tx_active || uxQueueMessagesWaiting(s_tx_q) > 0);
 }
+
+
 
 
 
