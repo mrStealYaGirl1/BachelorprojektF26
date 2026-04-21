@@ -198,6 +198,9 @@ static uint8_t imu_read_chip_id(void)
 
 int imu_init(void)
 {
+    uint8_t chip_id;
+
+    // 🔥 INIT SPI FIRST
     if (spi_driver_init() != 0)
     {
         printk("SPI init failed\n");
@@ -208,6 +211,7 @@ int imu_init(void)
 
     k_msleep(10);
 
+    // Setup BMI interface
     s_bmi.read = bmi_spi_read;
     s_bmi.write = bmi_spi_write;
     s_bmi.delay_us = spi_delay;
@@ -232,6 +236,18 @@ int imu_init(void)
     if (rslt != BMI2_OK)
     {
         printk("BMI270 init failed\n");
+        return -1;
+    }
+
+    bmi2_get_regs(0x00, &chip_id, 1, &s_bmi);
+    printk("CHIP_ID: 0x%02X\n", chip_id);
+
+    uint8_t sens_list[2] = { BMI2_ACCEL, BMI2_GYRO };
+    rslt = bmi2_sensor_enable(sens_list, 2, &s_bmi);
+    printk("bmi2_sensor_enable rslt = %d\n", rslt);
+
+    if (rslt != BMI2_OK) {
+        printk("Sensor enable failed\n");
         return -1;
     }
 

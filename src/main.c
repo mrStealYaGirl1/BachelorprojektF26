@@ -53,7 +53,7 @@ int main(void)
     printk("After k_thread_create\n");
 
     while (1) {
-        printk("main alive\n");
+        //printk("main alive\n");
         k_sleep(K_SECONDS(1));
     }
 }
