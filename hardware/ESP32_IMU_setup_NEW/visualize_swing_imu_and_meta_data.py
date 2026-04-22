@@ -265,6 +265,14 @@ def main():
         back_mask_plot = plot_df["t"] <= 0
         forward_mask_plot = plot_df["t"] > 0
 
+    # Maks vinkel i det viste plot-interval
+    angle_peak_idx = plot_df["angle_deg"].idxmax()
+    angle_peak_t = plot_df.loc[angle_peak_idx, "t"]
+    angle_peak_deg = plot_df.loc[angle_peak_idx, "angle_deg"]
+
+    print(f"Maks vinkel: {angle_peak_deg:.2f} deg ved t = {angle_peak_t:.3f} s")
+
+
     # Figur
     fig, axes = plt.subplots(3, 1, figsize=(12, 10), sharex=True)
 
@@ -291,6 +299,18 @@ def main():
 
     axes[0].axvline(acc_peak_t, linestyle="--", linewidth=1.2, label="Acc peak")
     axes[0].axvline(gyro_peak_t, linestyle=":", linewidth=1.2, label="Gyro peak")
+
+    # Markér maks vinkel
+    axes[0].plot(angle_peak_t, angle_peak_deg, "ko", label="Maks vinkel")
+    axes[0].annotate(
+        f"Maks: {angle_peak_deg:.1f}°",
+        xy=(angle_peak_t, angle_peak_deg),
+        xytext=(-110, -10),
+        textcoords="offset points",
+        fontsize=10,
+        bbox=dict(boxstyle="round", fc="white", alpha=0.8),
+        arrowprops=dict(arrowstyle="->")
+    )
 
     axes[0].set_ylabel("Angle [deg]")
     axes[0].set_title(f"Golf-event analyse (event {selected_event_id}({imu_csv}))")

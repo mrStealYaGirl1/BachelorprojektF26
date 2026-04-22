@@ -173,7 +173,7 @@ void swing_manager_task(void *pvParameters)
                         }
                     }
 
-                    vTaskDelay(pdMS_TO_TICKS(100));
+                    vTaskDelay(pdMS_TO_TICKS(200));
                 }
                 else
                 {

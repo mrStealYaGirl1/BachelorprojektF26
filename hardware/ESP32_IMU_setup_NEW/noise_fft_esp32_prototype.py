@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
 
-filename = Path(__file__).parent / "støj_esp3v3_1ms-div.csv"
+filename = Path(__file__).parent / "støj_esp32_blesend-1ms-div5.csv"
 
 # find header-linjen
 header_line = None
