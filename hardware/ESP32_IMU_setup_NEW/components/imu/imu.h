@@ -130,4 +130,6 @@ void imu_ringbuffer_init(void);
 void imu_ringbuffer_push(const imu_sample_t *sample);
 imu_ringbuffer_t* imu_get_ringbuffer(void);
 
+void imu_csv_logger_task(void *pvParameters); // for logging IMU data to CSV for analysis (drift analysis) (not real-time)
+
 #endif

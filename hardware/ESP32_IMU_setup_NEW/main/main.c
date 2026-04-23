@@ -44,7 +44,43 @@ void app_main(void)
 }
 
 
-// Memory usage logging and stack high water mark checks - used for debugging or optimization purposes.
+
+/******************************************************************************************************/
+/* test main - for analyzing IMU-data for drifting/drift */
+/******************************************************************************************************/
+// #include <stdio.h>
+// #include "freertos/FreeRTOS.h"
+// #include "freertos/task.h"
+// #include "esp_log.h"
+
+// #include "imu.h"
+
+// static const char *TAG = "MAIN";
+
+// // Hvis denne skal bruges - husk at fjerne ESP_LOGI'er i imu_init og imu_calibrate for at undgå at forstyrre CSV output
+
+// void app_main(void)
+// {
+//     ESP_LOGI(TAG, "Starter IMU drift-test");
+
+//     imu_init();
+
+//     xTaskCreate(
+//         imu_csv_logger_task,
+//         "imu_csv_logger_task",
+//         4096,
+//         NULL,
+//         5,
+//         NULL
+//     );
+// }
+
+
+
+
+/******************************************************************************************************/
+/* Memory usage logging and stack high water mark checks - used for debugging or optimization purposes.*/
+/******************************************************************************************************/
 // #include <stdio.h>
 // #include "freertos/FreeRTOS.h"
 // #include "freertos/task.h"

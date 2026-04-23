@@ -817,6 +817,52 @@ static void reset_impact_detector(void)
     peak_print_counter = 0;
 }
 
+/* =====================================================
+   IMU CSV LOGGER (til analyse af drift, ikke real-time) - print til UART i CSV format, kan fanges af en PC og gemmes i en fil
+===================================================== */
+// Hvis denne skal bruges - husk at fjerne ESP_LOGI'er i imu_init og imu_calibrate for at undgå at forstyrre CSV output
+
+#define IMU_LOG_DURATION_MINUTES   10
+#define IMU_LOG_SAMPLE_PERIOD_MS   5   // 200 Hz
+
+void imu_csv_logger_task(void *pvParameters)
+{
+    struct bmi2_sens_data sensor_data;
+    TickType_t last_wake = xTaskGetTickCount();
+
+    vTaskDelay(pdMS_TO_TICKS(500));
+
+    int64_t start_us = esp_timer_get_time();
+    int64_t duration_us = (int64_t)IMU_LOG_DURATION_MINUTES * 60LL * 1000000LL;
+
+    printf("t_us,gx_raw,gy_raw,gz_raw,gx_corr,gy_corr,gz_corr\n");
+
+    while ((esp_timer_get_time() - start_us) < duration_us)
+    {
+        if (bmi2_get_sensor_data(&sensor_data, &s_bmi) == BMI2_OK)
+        {
+            int64_t t_us = esp_timer_get_time();
+
+            int16_t gx_raw = sensor_data.gyr.x;
+            int16_t gy_raw = sensor_data.gyr.y;
+            int16_t gz_raw = sensor_data.gyr.z;
+
+            float gx_corr = (gx_raw * (2000.0f / 32768.0f)) - gyro_bias_x;
+            float gy_corr = (gy_raw * (2000.0f / 32768.0f)) - gyro_bias_y;
+            float gz_corr = (gz_raw * (2000.0f / 32768.0f)) - gyro_bias_z;
+
+            // logger både raw og korrigerede gyro-værdier for at kunne analysere drift og bias
+            printf("%lld,%d,%d,%d,%.6f,%.6f,%.6f\n",
+                   t_us,
+                   gx_raw, gy_raw, gz_raw,
+                   gx_corr, gy_corr, gz_corr);
+        }
+
+        vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(IMU_LOG_SAMPLE_PERIOD_MS));
+    }
+
+    vTaskDelete(NULL);
+}
 
 /* =====================================================
    TASK
