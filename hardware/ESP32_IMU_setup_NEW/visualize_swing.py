@@ -2,6 +2,7 @@ import sys
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import os
 
 # =========================
 # DETECTION THRESHOLDS
@@ -329,7 +330,22 @@ def main():
 
     axes[2].set_xlim(-PRE_SAMPLES / SAMPLE_RATE_HZ, POST_SAMPLES / SAMPLE_RATE_HZ)
 
+
+    # =========================
+    # GEM FIGUR
+    # =========================
+    save_dir = os.path.join("golf_events", "figurer_uden_meta")
+    os.makedirs(save_dir, exist_ok=True)
+
+    base_name = os.path.basename(csv_file).replace(".csv", "")
+    filename = f"{base_name}.png"
+
+    save_path = os.path.join(save_dir, filename)
+
     plt.tight_layout()
+    plt.savefig(save_path, dpi=300)
+    print(f"Figur gemt: {save_path}")
+
     plt.show()
 
 

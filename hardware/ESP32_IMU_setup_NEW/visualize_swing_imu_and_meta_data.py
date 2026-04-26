@@ -2,6 +2,7 @@ import sys
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import os
 
 # =========================
 # INDSTILLINGER
@@ -162,7 +163,7 @@ def add_phase_lines(ax, phase_times):
 
 def main():
     if len(sys.argv) < 3:
-        print("Brug: python visualize_swing.py <imu_csv> <meta_csv> [event_id]")
+        print("Brug: python visualize_swing.py <imu_csv> <meta_csv>")
         return
 
     imu_csv = sys.argv[1]
@@ -374,6 +375,22 @@ def main():
 
     for ax in axes:
         ax.set_xlim(x_min, x_max)
+
+
+    # =========================
+    # GEM FIGUR
+    # =========================
+    save_dir = os.path.join("golf_events", "figurer")
+    os.makedirs(save_dir, exist_ok=True)
+
+    base_name = os.path.basename(imu_csv).replace("_imu.csv", "")
+    filename = f"{base_name}.png"
+
+    save_path = os.path.join(save_dir, filename)
+
+    plt.savefig(save_path, dpi=300)
+    print(f"Figur gemt: {save_path}")
+
 
     plt.tight_layout()
     plt.show()

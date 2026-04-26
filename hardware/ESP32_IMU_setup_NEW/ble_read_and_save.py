@@ -1,6 +1,7 @@
 import asyncio
 import struct
 import csv
+import os
 from datetime import datetime
 from bleak import BleakClient, BleakScanner
 
@@ -86,8 +87,14 @@ def open_csv_files():
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    imu_csv_filename = f"golf_event_{timestamp}_imu.csv"
-    meta_csv_filename = f"golf_event_{timestamp}_meta.csv"
+    # 👇 mappe hvor filer skal gemmes
+    base_dir = os.path.join("golf_events", "med_meta")
+
+    # 👇 opret mappe hvis den ikke findes
+    os.makedirs(base_dir, exist_ok=True)
+
+    imu_csv_filename = os.path.join(base_dir, f"golf_event_{timestamp}_imu.csv")
+    meta_csv_filename = os.path.join(base_dir, f"golf_event_{timestamp}_meta.csv")
 
     imu_csv_file = open(imu_csv_filename, "w", newline="", encoding="utf-8")
     imu_csv_writer = csv.writer(imu_csv_file)
