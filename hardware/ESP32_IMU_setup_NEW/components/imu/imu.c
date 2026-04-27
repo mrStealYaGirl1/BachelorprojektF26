@@ -217,7 +217,7 @@ static void spi_init_bus(void)
 
 void imu_init(void)
 {
-    ESP_LOGI(TAG, "Initializing BMI270...");
+    //ESP_LOGI(TAG, "Initializing BMI270...");
 
     spi_init_bus();
     vTaskDelay(pdMS_TO_TICKS(100));
@@ -230,7 +230,7 @@ void imu_init(void)
 
     if (bmi270_init(&s_bmi) != BMI2_OK)
     {
-        ESP_LOGE(TAG, "BMI270 init failed");
+        //ESP_LOGE(TAG, "BMI270 init failed");
         return;
     }
 
@@ -254,7 +254,7 @@ void imu_init(void)
     imu_ringbuffer_init();
     imu_calibrate();
 
-    ESP_LOGI(TAG, "IMU ready");
+    //ESP_LOGI(TAG, "IMU ready");
 }
 
 /* =====================================================
@@ -269,7 +269,7 @@ static void imu_calibrate(void)
     float sum_ax = 0, sum_ay = 0, sum_az = 0;
     float sum_gx = 0, sum_gy = 0, sum_gz = 0;
 
-    ESP_LOGI(TAG, "Calibrating IMU... Keep it still!");
+    //ESP_LOGI(TAG, "Calibrating IMU... Keep it still!");
 
     for (int i = 0; i < samples; i++)
     {
@@ -303,7 +303,7 @@ static void imu_calibrate(void)
     gyro_bias_y = sum_gy / samples;
     gyro_bias_z = sum_gz / samples;
 
-    ESP_LOGI(TAG, "Calibration done");
+    //ESP_LOGI(TAG, "Calibration done");
 }
 
 
@@ -822,7 +822,7 @@ static void reset_impact_detector(void)
 ===================================================== */
 // Hvis denne skal bruges - husk at fjerne ESP_LOGI'er i imu_init og imu_calibrate for at undgå at forstyrre CSV output
 
-#define IMU_LOG_DURATION_MINUTES   10
+#define IMU_LOG_DURATION_MINUTES   4
 #define IMU_LOG_SAMPLE_PERIOD_MS   5   // 200 Hz
 
 void imu_csv_logger_task(void *pvParameters)
