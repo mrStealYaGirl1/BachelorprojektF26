@@ -44,6 +44,36 @@
 // }
 
 
+// /******************************************************************************************************/
+// /* test main - test af integreret gz-vinkel */
+// /******************************************************************************************************/
+
+// #include <stdio.h>
+// #include "freertos/FreeRTOS.h"
+// #include "freertos/task.h"
+// #include "esp_log.h"
+
+// #include "imu.h"
+
+// static const char *TAG = "MAIN";
+
+// void app_main(void)
+// {
+//     ESP_LOGI(TAG, "Starter GZ angle test");
+
+//     imu_init();
+
+//     xTaskCreate(
+//         imu_gz_angle_test_task,
+//         "imu_gz_angle_test",
+//         4096,
+//         NULL,
+//         5,
+//         NULL
+//     );
+// }
+
+
 
 /******************************************************************************************************/
 /* test main - for analyzing IMU-data for drifting/drift */

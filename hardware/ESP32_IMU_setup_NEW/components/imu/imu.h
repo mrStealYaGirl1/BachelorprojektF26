@@ -131,5 +131,6 @@ void imu_ringbuffer_push(const imu_sample_t *sample);
 imu_ringbuffer_t* imu_get_ringbuffer(void);
 
 void imu_csv_logger_task(void *pvParameters); // for logging IMU data to CSV for analysis (drift analysis) (not real-time)
+void imu_gz_angle_test_task(void *pvParameters); // for testing om gz kan bruges til at estimere angle i backswing og downswing (print til CSV for analyse, ikke real-time)
 
 #endif

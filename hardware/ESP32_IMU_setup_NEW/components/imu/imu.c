@@ -990,3 +990,51 @@ static void reset_current_swing(void)
 }
 
 
+
+/* =====================================================
+   GZ ANGLE TEST
+   Bruges til at teste om integreret gz-vinkel passer
+   med en kendt fysisk rotation
+===================================================== */
+
+void imu_gz_angle_test_task(void *pvParameters)
+{
+    struct bmi2_sens_data sensor_data;
+    TickType_t last_wake = xTaskGetTickCount();
+
+    float angle_z_deg = 0.0f;
+    int64_t last_t_us = esp_timer_get_time();
+
+    ESP_LOGI(TAG, "GZ angle test started");
+    ESP_LOGI(TAG, "Hold IMU still for a moment, then rotate known angle around Z-axis");
+
+    while (1)
+    {
+        if (bmi2_get_sensor_data(&sensor_data, &s_bmi) == BMI2_OK)
+        {
+            int64_t now_us = esp_timer_get_time();
+            float dt = (now_us - last_t_us) / 1000000.0f;
+            last_t_us = now_us;
+
+            float gz_raw_dps = sensor_data.gyr.z * (2000.0f / 32768.0f);
+            float gz_corr_dps = gz_raw_dps - gyro_bias_z;
+
+            angle_z_deg += gz_corr_dps * dt;
+
+            static uint32_t print_counter = 0;
+            print_counter++;
+
+            // Print ca. 10 gange i sekundet ved 200 Hz
+            if (print_counter >= 20)
+            {
+                print_counter = 0;
+
+                printf("gz_corr_dps=%.3f, angle_z_deg=%.2f\n",
+                       gz_corr_dps,
+                       angle_z_deg);
+            }
+        }
+
+        vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(5)); // 200 Hz
+    }
+}
