@@ -739,10 +739,9 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(4, 4, 0, 0.35)',
     textShadowOffset: { width: -1, height: 1 },
     textShadowRadius: 10,
-    fontWeight: '800',
     textAlign: 'center',
     color: '#fff',
-    marginBottom: 8,
+    letterSpacing: -0.8,
   },
   profileRow: {
     marginTop: 26,
@@ -776,6 +775,7 @@ const styles = StyleSheet.create({
   },
   decodedSection: {
     marginTop: 8,
+    marginHorizontal: 18,
   },
   bottomConnectArea: {
     marginTop: 'auto',
@@ -785,17 +785,17 @@ const styles = StyleSheet.create({
   bleButton: {
     backgroundColor: '#303030',
     marginTop: 8,
-    minHeight: 45,
+    minHeight: 50,
     width: '100%',
     borderRadius: 999,
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
     justifyContent: 'center',
   },
   bleButtonText: {
     color: '#FFFFFF',
     fontFamily: 'RethinkSans_400Regular',
     fontSize: 18,
-    marginLeft: 46,
+    marginLeft: 42,
     paddingBottom: 3,
   },
   bleButtonContent: {

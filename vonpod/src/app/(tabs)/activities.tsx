@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import {
+  Alert,
   Modal,
   Pressable,
   SafeAreaView,
@@ -13,6 +14,7 @@ import { useRouter } from 'expo-router'
 import { useFocusEffect } from '@react-navigation/native'
 import Ionicons from '@expo/vector-icons/Ionicons'
 import {
+  deleteStoredTrainingSession,
   loadStoredTrainingSessions,
   type StoredTrainingSession,
   updateStoredTrainingSession,
@@ -45,6 +47,7 @@ const Activities = () => {
   const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null)
   const [isRenameModalVisible, setIsRenameModalVisible] = useState(false)
   const [isSavingRename, setIsSavingRename] = useState(false)
+  const [isEditMode, setIsEditMode] = useState(false)
 
   const getDefaultActivityName = useCallback((startedAt: string) => {
     const date = new Date(startedAt)
@@ -80,6 +83,7 @@ const Activities = () => {
 
   useFocusEffect(
     useCallback(() => {
+      setIsEditMode(false)
       void loadSessions()
     }, [loadSessions])
   )
@@ -125,11 +129,57 @@ const Activities = () => {
     }
   }
 
+  const deleteSession = async (sessionId: string) => {
+    setErrorText(null)
+
+    try {
+      const nextSessions = await deleteStoredTrainingSession(sessionId)
+      const sorted = [...nextSessions].sort(
+        (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
+      )
+      setSessions(sorted)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Kunne ikke slette session'
+      setErrorText(message)
+    }
+  }
+
+  const confirmDeleteSession = (trainingSession: StoredTrainingSession) => {
+    const activityName =
+      trainingSession.activityName?.trim() || getDefaultActivityName(trainingSession.startedAt)
+
+    Alert.alert(
+      'Slet session?',
+      `Er du sikker paa at du vil slette "${activityName}"? Denne handling kan ikke fortrydes.`,
+      [
+        {
+          text: 'Annuller',
+          style: 'cancel',
+        },
+        {
+          text: 'Slet',
+          style: 'destructive',
+          onPress: () => {
+            void deleteSession(trainingSession.id)
+          },
+        },
+      ]
+    )
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <Text style={styles.logo}>vonpod</Text>
-      <Text style={styles.title}>Activities</Text>
-      <Text style={styles.subtitle}>{isLoading ? 'Indlaeser...' : `${sessions.length} sessions`}</Text>
+      <View style={styles.headerRow}>
+        <View>
+          <Text style={styles.title}>Activities</Text>
+          <Text style={styles.subtitle}>{isLoading ? 'Indlaeser...' : `${sessions.length} sessions`}</Text>
+        </View>
+
+        <Pressable style={styles.editButton} onPress={() => setIsEditMode((prev) => !prev)}>
+          <Text style={styles.editButtonText}>{isEditMode ? 'Done' : 'Edit'}</Text>
+        </Pressable>
+      </View>
 
       {!!errorText && <Text style={styles.errorText}>{errorText}</Text>}
 
@@ -146,12 +196,17 @@ const Activities = () => {
               <Pressable
                 key={trainingSession.id}
                 style={styles.card}
-                onPress={() =>
+                onPress={() => {
+                  if (isEditMode) {
+                    confirmDeleteSession(trainingSession)
+                    return
+                  }
+
                   router.push({
                     pathname: '/activity-details',
                     params: { sessionId: trainingSession.id },
                   })
-                }
+                }}
               >
                 <View style={styles.dateBadge}>
                   <Text style={styles.dateMonth}>{badge.month}</Text>
@@ -193,7 +248,22 @@ const Activities = () => {
                   </View>
                 </View>
 
-                <Ionicons name='chevron-forward' size={24} color='#b8b8b8' />
+                <View style={styles.trailingIconSlot}>
+                  {isEditMode ? (
+                    <Pressable
+                      onPress={(event) => {
+                        event.stopPropagation()
+                        confirmDeleteSession(trainingSession)
+                      }}
+                      hitSlop={8}
+                      style={styles.trailingIconPressable}
+                    >
+                      <Ionicons name='trash-outline' size={22} color='#cf2b2b' />
+                    </Pressable>
+                  ) : (
+                    <Ionicons name='chevron-forward' size={24} color='#b8b8b8' />
+                  )}
+                </View>
               </Pressable>
             )
           })
@@ -256,14 +326,34 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: '#222',
     marginBottom: 8,
+    letterSpacing: -0.5,
   },
   title: {
     fontSize: 24,
     fontFamily: 'RethinkSans_500Medium',
-
     marginBottom: 2,
     marginLeft: 24,
     color: '#0f0f0f',
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginRight: 24,
+  },
+  editButton: {
+    minHeight: 32,
+    minWidth: 56,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#efefef',
+  },
+  editButtonText: {
+    color: '#404040',
+    fontSize: 13,
+    fontFamily: 'RethinkSans_600SemiBold',
   },
   subtitle: {
     fontSize: 15,
@@ -277,6 +367,7 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     marginTop: 12,
+    marginHorizontal: 18,
     fontSize: 14,
     opacity: 0.8,
     color: '#4a4a4a',
@@ -379,6 +470,18 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#202020',
     fontFamily: 'RethinkSans_400Regular',
+  },
+  trailingIconSlot: {
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  trailingIconPressable: {
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   errorText: {
     color: '#b00020',

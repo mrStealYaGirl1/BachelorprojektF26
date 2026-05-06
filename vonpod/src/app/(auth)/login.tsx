@@ -1,5 +1,5 @@
-import React, { useState } from 'react'
-import { Alert, ImageBackground, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
+import React, { useRef, useState } from 'react'
+import { Alert, ImageBackground, Keyboard, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
 import { supabase } from '../../lib/supabase'
 import { router } from 'expo-router'
 import Ionicons from '@expo/vector-icons/Ionicons'
@@ -9,6 +9,27 @@ export default function AuthScreen() {
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
+  const previousEmailLengthRef = useRef(0)
+  const previousPasswordLengthRef = useRef(0)
+
+  const maybeDismissAfterAutofill = (nextEmail: string, nextPassword: string, previousLength: number, nextLength: number) => {
+    const looksLikeAutofill = nextLength - previousLength > 1
+    if (looksLikeAutofill && nextEmail.trim().length > 0 && nextPassword.length > 0) {
+      Keyboard.dismiss()
+    }
+  }
+
+  const handleEmailChange = (nextEmail: string) => {
+    maybeDismissAfterAutofill(nextEmail, password, previousEmailLengthRef.current, nextEmail.length)
+    previousEmailLengthRef.current = nextEmail.length
+    setEmail(nextEmail)
+  }
+
+  const handlePasswordChange = (nextPassword: string) => {
+    maybeDismissAfterAutofill(email, nextPassword, previousPasswordLengthRef.current, nextPassword.length)
+    previousPasswordLengthRef.current = nextPassword.length
+    setPassword(nextPassword)
+  }
 
   const signIn = async () => {
     if (!email || !password) {
@@ -56,7 +77,7 @@ export default function AuthScreen() {
             autoCapitalize="none"
             keyboardType="email-address"
             value={email}
-            onChangeText={setEmail}
+            onChangeText={handleEmailChange}
             style={styles.inputField}
             placeholderTextColor="#7f7f7f"
           />
@@ -69,7 +90,7 @@ export default function AuthScreen() {
             autoCapitalize="none"
             secureTextEntry={!showPassword}
             value={password}
-            onChangeText={setPassword}
+            onChangeText={handlePasswordChange}
             style={styles.inputField}
             placeholderTextColor="#7f7f7f"
           />

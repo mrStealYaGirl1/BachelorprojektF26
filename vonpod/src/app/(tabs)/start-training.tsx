@@ -4,6 +4,8 @@ import { useFocusEffect } from 'expo-router';
 import FeatureCard from '../../components/cards/FeatureCard';
 import { loadStoredEvents, type StoredImuEvent } from '../../lib/imuStorage';
 import { getLatestValidTempo } from '../../features/puttMetrics/calculateTempo';
+import { calculateFaceRotationFromEvent } from '../../features/puttMetrics/calculateFaceRotation';
+import { calculateLieAngleImpactFromEvent } from '../../features/puttMetrics/calculateLieAngleImpact';
 import { useTraining } from '../../providers/TrainingProvider';
 
 function formatDuration(totalSeconds: number): string {
@@ -32,7 +34,6 @@ export default function StartTrainingScreen() {
   } = useTraining();
 
   const [events, setEvents] = useState<StoredImuEvent[]>([]);
-  const [tempoLabel, setTempoLabel] = useState('No data');
 
   const refreshEvents = useCallback(async () => {
     try {
@@ -57,30 +58,57 @@ export default function StartTrainingScreen() {
     [visiblePuttCount]
   );
 
-  const refreshTempo = useCallback(() => {
-    if (!selectedEvent) {
-      setTempoLabel('-.-');
-      return;
+  const selectedTempo = useMemo(
+    () => (selectedEvent ? getLatestValidTempo([selectedEvent]) : null),
+    [selectedEvent]
+  );
+
+  const selectedFaceRotation = useMemo(
+    () => (selectedEvent ? calculateFaceRotationFromEvent(selectedEvent) : null),
+    [selectedEvent]
+  );
+
+  const selectedLieAngleImpact = useMemo(
+    () => (selectedEvent ? calculateLieAngleImpactFromEvent(selectedEvent) : null),
+    [selectedEvent]
+  );
+
+  const forwardStrokeRotationDeg = useMemo(() => {
+    if (!selectedFaceRotation) {
+      return null;
     }
 
-    const tempo = getLatestValidTempo([selectedEvent]);
-    setTempoLabel(tempo ? tempo.ratioLabel : '-.-');
-  }, [selectedEvent]);
+    return selectedFaceRotation.faceAngleAtImpactDeg - selectedFaceRotation.faceOpenAtTopDeg;
+  }, [selectedFaceRotation]);
+
+  const formatDegValue = (value: number | null): string => {
+    if (value === null || !Number.isFinite(value)) {
+      return '-.-';
+    }
+
+    return Math.abs(value).toFixed(1);
+  };
+
+  const directionLabel = (value: number | null, positiveLabel: string, negativeLabel: string): string => {
+    if (value === null || !Number.isFinite(value)) {
+      return 'deg';
+    }
+
+    return value >= 0 ? `deg · ${positiveLabel}` : `deg · ${negativeLabel}`;
+  };
 
   useFocusEffect(
     useCallback(() => {
       void refreshEvents();
-      void refreshTempo();
 
       const intervalId = setInterval(() => {
         void refreshEvents();
-        void refreshTempo();
       }, 1000);
 
       return () => {
         clearInterval(intervalId);
       };
-    }, [refreshEvents, refreshTempo])
+    }, [refreshEvents])
   );
 
   return (
@@ -123,7 +151,7 @@ export default function StartTrainingScreen() {
         <View style={styles.grid}>
           <FeatureCard
             title="Tempo"
-            value={tempoLabel}
+            value={selectedTempo?.ratioLabel ?? '-.-'}
             unitLabel="ratio"
           />
           <FeatureCard
@@ -133,23 +161,23 @@ export default function StartTrainingScreen() {
           />
           <FeatureCard
             title="Back Stroke Rotation"
-            value={selectedEvent?.meta ? selectedEvent.meta.sampleRateHz.toString() : '-.-'}
-            unitLabel="deg · open"
+            value={formatDegValue(selectedFaceRotation?.faceOpenAtTopDeg ?? null)}
+            unitLabel={directionLabel(selectedFaceRotation?.faceOpenAtTopDeg ?? null, 'open', 'closed')}
           />
           <FeatureCard
             title="Forward Stroke Rotation"
-            value={selectedEvent?.meta ? selectedEvent.meta.swingId.toString() : '-.-'}
-            unitLabel="deg · closed"
+            value={formatDegValue(forwardStrokeRotationDeg)}
+            unitLabel={directionLabel(forwardStrokeRotationDeg, 'open', 'closed')}
           />
           <FeatureCard
-            title="Lie Impact Angle"
-            value={selectedEvent?.meta ? selectedEvent.meta.impactIndexInEvent.toString() : '-.-'}
-            unitLabel="deg · toe up"
+            title="Lie Angle Impact"
+            value={formatDegValue(selectedLieAngleImpact?.impactAngleDeg ?? null)}
+            unitLabel={selectedLieAngleImpact?.impactAngleUnitLabel ?? 'deg'}
           />
           <FeatureCard
             title="Face Angle at Impact"
-            value={selectedEvent ? selectedEvent.samples.length.toString() : '-.-'}
-            unitLabel="deg · open"
+            value={formatDegValue(selectedFaceRotation?.faceAngleAtImpactDeg ?? null)}
+            unitLabel={directionLabel(selectedFaceRotation?.faceAngleAtImpactDeg ?? null, 'open', 'closed')}
           />
         </View>
 
