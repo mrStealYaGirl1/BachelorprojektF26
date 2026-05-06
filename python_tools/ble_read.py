@@ -152,10 +152,10 @@ import math
 from bleak import BleakClient, BleakScanner
 
 DEVICE_NAME = "GOLF_IMU_V2"
-CHAR_UUID = "99887766-5544-3322-1100-ffeeddccbbaa"
+CHAR_UUID = "0000fff1-0000-1000-8000-00805f9b34fb"
 
 # ESP32-side
-BLE_IMU_SAMPLES_PER_PKT = 5
+BLE_IMU_SAMPLES_PER_PKT = 11
 
 # packet:
 # uint16 event_id

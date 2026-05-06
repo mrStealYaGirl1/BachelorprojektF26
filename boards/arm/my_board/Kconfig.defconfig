@@ -1,0 +1,27 @@
+if BOARD_MY_BOARD
+
+config GPIO
+	default y
+
+config SERIAL
+	default n
+
+config CONSOLE
+	default y
+
+config PRINTK
+	default y
+
+config UART_CONSOLE
+	default n
+
+config LOG_BACKEND_UART
+	default n
+
+config USE_SEGGER_RTT
+	default y
+
+config RTT_CONSOLE
+	default y
+
+endif

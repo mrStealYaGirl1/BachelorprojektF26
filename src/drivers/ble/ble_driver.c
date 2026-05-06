@@ -1,12 +1,15 @@
 #include <zephyr/kernel.h>
 #include <zephyr/sys/printk.h>
+#include <zephyr/sys/util.h>
 
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/gatt.h>
 #include <zephyr/bluetooth/conn.h>
 #include <zephyr/bluetooth/hci.h>
+#include <string.h>
 
 #include "ble_driver.h"
+
 
 
 /*
@@ -26,6 +29,10 @@ I skal tænke BLE-opstart i to trin:
    GLOBALS
 ========================= */
 
+static ble_imu_packet_t pkt;
+static ble_imu_packet_t pkt_tx;
+static uint8_t sample_index = 0;
+
 static struct bt_conn *current_conn = NULL;
 static bool notify_enabled = false;
 static bool att_ready = false;
@@ -40,11 +47,10 @@ static volatile bool ble_tx_busy = false;
 /* forward declaration */
 static void ble_notify_work(struct k_work *work);
 
-/* =========================
-   TEST DATA
-========================= */
-
-static ble_imu_packet_t pkt;
+static void notify_cb(struct bt_conn *conn, void *user_data)
+{
+    ble_tx_busy = false;
+}
 
 /* =========================
    CALLBACKS
@@ -138,7 +144,10 @@ static void ble_notify_work(struct k_work *work)
 
     uint16_t mtu = bt_gatt_get_mtu(current_conn);
     uint16_t max_payload = (mtu >= 3) ? (mtu - 3) : 0;
-    uint16_t len = sizeof(pkt);
+    uint16_t len = sizeof(pkt_tx.event_id)
+             + sizeof(pkt_tx.packet_type)
+             + sizeof(pkt_tx.sample_count)
+             + pkt_tx.sample_count * sizeof(ble_imu_sample_t);
 
     if (len > max_payload)
     {
@@ -148,23 +157,32 @@ static void ble_notify_work(struct k_work *work)
         return;
     }
 
-    int err = bt_gatt_notify(current_conn,
-                             notify_attr,
-                             &pkt,
-                             len);
+    struct bt_gatt_notify_params params = {
+        .attr = notify_attr,
+        .data = &pkt_tx,
+        .len = len,
+        .func = notify_cb,
+    };
+
+    int err = bt_gatt_notify_cb(current_conn, &params);
 
     if (err)
     {
         printk("Notify error: %d\n", err);
+        ble_tx_busy = false;   // 🔥 VIGTIG (ellers kan du deadlocke)
     }
     else
-    {
-        if ((pkt.sample.seq % 50) == 0) {
-            printk("BLE seq=%d\n", pkt.sample.seq);
+    { 
+        if (pkt_tx.sample_count > 0)
+        {
+            uint16_t last_seq = pkt_tx.samples[pkt_tx.sample_count - 1].seq;
+
+            if ((last_seq % 50) == 0) {
+                printk("BLE seq=%d\n", last_seq);
+            }
         }
     }
 
-    ble_tx_busy = false;
 }
 
 
@@ -214,20 +232,21 @@ void ble_post_init(void)
         .interval_max = BT_GAP_ADV_FAST_INT_MAX_2,
     };
 
+
     const struct bt_data ad[] = {
         BT_DATA_BYTES(BT_DATA_FLAGS,
             (BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR)),
-    };
 
-    const struct bt_data sd[] = {
         BT_DATA(BT_DATA_NAME_COMPLETE,
-                CONFIG_BT_DEVICE_NAME,
-                sizeof(CONFIG_BT_DEVICE_NAME) - 1),
+            STRINGIFY(CONFIG_BT_DEVICE_NAME),
+            strlen(STRINGIFY(CONFIG_BT_DEVICE_NAME))),
+
+        BT_DATA_BYTES(BT_DATA_UUID16_ALL, 0xF0, 0xFF)   // 0xFFF0 in little-endian
     };
 
     int err = bt_le_adv_start(&adv_param,
-                              ad, ARRAY_SIZE(ad),
-                              sd, ARRAY_SIZE(sd));
+                            ad, ARRAY_SIZE(ad),
+                            NULL, 0);
 
     if (err && err != -EALREADY) {
         printk("ADV START failed: %d\n", err);
@@ -273,16 +292,16 @@ void ble_send_test(void)
     pkt.packet_type = 2;
     pkt.sample_count = 1;
 
-    pkt.sample.ax = 100 + seq;
-    pkt.sample.ay = 200;
-    pkt.sample.az = 300;
+    pkt.samples[0].ax = 100 + seq;
+    pkt.samples[0].ay = 200;
+    pkt.samples[0].az = 300;
 
-    pkt.sample.gx = 10;
-    pkt.sample.gy = 20;
-    pkt.sample.gz = 30;
+    pkt.samples[0].gx = 10;
+    pkt.samples[0].gy = 20;
+    pkt.samples[0].gz = 30;
 
-    pkt.sample.ts_ms = k_uptime_get_32();
-    pkt.sample.seq = seq++;
+    pkt.samples[0].ts_ms = k_uptime_get_32();
+    pkt.samples[0].seq = seq++;
 
     /* 🔥 KUN DET HER */
     k_work_submit(&ble_work);
@@ -329,31 +348,40 @@ static void fill_ble_sample_from_imu(const imu_sample_t *src,
 void ble_send_imu_sample(const imu_sample_t *sample)
 {
     if (sample == NULL)
-    {
         return;
-    }
 
     if (!current_conn || !notify_enabled || !att_ready)
-    {
         return;
-    }
-
-    if (ble_tx_busy)
-    {
-        return;
-    }
-
-    ble_tx_busy = true;
 
     static uint16_t seq = 0;
 
     pkt.event_id = 1;
     pkt.packet_type = 2;
-    pkt.sample_count = 1;
 
-    fill_ble_sample_from_imu(sample, &pkt.sample, seq++);
+    /* 🔒 overflow protection */
+    if (sample_index < BLE_SAMPLES_PER_PKT)
+    {
+        fill_ble_sample_from_imu(sample,
+                                 &pkt.samples[sample_index],
+                                 seq++);
 
-    k_work_submit(&ble_work);
+        sample_index++;
+    }
+
+    if (sample_index >= BLE_SAMPLES_PER_PKT)
+    {
+        pkt.sample_count = sample_index;
+
+        if (!ble_tx_busy)
+        {
+            memcpy(&pkt_tx, &pkt, sizeof(pkt));
+
+            ble_tx_busy = true;
+            k_work_submit(&ble_work);
+
+            sample_index = 0;
+        }
+    }
 }
 
 bool ble_is_stack_ready(void)

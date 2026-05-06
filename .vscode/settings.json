@@ -1,4 +1,7 @@
 {
     "idf.currentSetup": "C:/Espressif/frameworks/esp-idf-v5.5.2/",
-    "C_Cpp.errorSquiggles": "disabled"
+    "C_Cpp.errorSquiggles": "disabled",
+    "nrf-connect.debugging.bindings": {
+        "${workspaceFolder}/build": "Launch Blinky/build"
+    }
 }

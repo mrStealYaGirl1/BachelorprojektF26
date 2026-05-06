@@ -1,13 +1,13 @@
 // imu_driver.c - BMI270 IMU driver
 
 #include "imu_driver.h"
-#include "spi/spi_driver.h"
+#include "../spi/spi_driver.h"
 
-#include "bmi270/bmi2.h"
-#include "bmi270/bmi270.h"
+#include "../bmi270/bmi2.h"
+#include "../bmi270/bmi270.h"
 
 #include "imu_processing.h"
-#include "ble/ble_driver.h"
+#include "../ble/ble_driver.h"
 
 #include <zephyr/kernel.h>
 #include <zephyr/sys/printk.h>
@@ -306,7 +306,7 @@ void imu_thread(void *p1, void *p2, void *p3)
 
         imu_process_sample(&sample, idx);
 
-        ble_send_imu_sample(&sample);
+        // ble_send_imu_sample(&sample);
 
         static int print_counter = 0;
 
@@ -319,6 +319,6 @@ void imu_thread(void *p1, void *p2, void *p3)
                 sample.gx, sample.gy, sample.gz);
         }
 
-        k_msleep(5);
+        k_msleep(10); // Before 5 = 200HZ. 10 = 100HZ
     }
 }

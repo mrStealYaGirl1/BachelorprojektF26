@@ -2,7 +2,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include "imu/imu_driver.h"
+#include "../imu/imu_driver.h"
 
 /* =========================
    IMU DATA STRUCTURES
@@ -12,10 +12,12 @@
 /* ❌ FJERNET: #pragma pack(pop)     */
 /* 👉 Zephyr + ARM håndterer alignment korrekt selv */
 
+#define BLE_SAMPLES_PER_PKT 10
+
 /* ---------------------------------
    SAMPLE STRUCT (uændret)
 --------------------------------- */
-typedef struct
+typedef struct __packed
 {
     int16_t ax;
     int16_t ay;
@@ -33,20 +35,13 @@ typedef struct
 /* ---------------------------------
    PACKET STRUCT (RETTET)
 --------------------------------- */
-typedef struct
+typedef struct __packed
 {
     uint16_t event_id;
     uint16_t packet_type;
     uint16_t sample_count;
 
-    /* 🔥 RETTET:
-       FRA:
-       ble_imu_sample_t samples[1];
-
-       TIL:
-       enkelt sample (stabil memory layout)
-    */
-    ble_imu_sample_t sample;
+    ble_imu_sample_t samples[BLE_SAMPLES_PER_PKT];
 
 } ble_imu_packet_t;
 

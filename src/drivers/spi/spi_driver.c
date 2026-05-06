@@ -3,10 +3,11 @@
 #include <zephyr/sys/printk.h>
 #include <zephyr/drivers/spi.h>
 #include <zephyr/drivers/gpio.h>
+#include <zephyr/kernel.h>
 
 #define SPI_NODE DT_NODELABEL(spi1)
 
-#define CS_PIN 3
+#define CS_PIN 6
 #define CS_NODE DT_NODELABEL(gpio0)
 
 static const struct device *spi_dev;

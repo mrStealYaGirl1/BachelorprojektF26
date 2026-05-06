@@ -1,62 +1,172 @@
 #include <zephyr/kernel.h>
-#include <zephyr/sys/printk.h>
-#include <zephyr/bluetooth/bluetooth.h>
-#include <zephyr/bluetooth/gatt.h>
-#include <zephyr/bluetooth/gap.h> 
-#include <zephyr/bluetooth/hci.h>
+#include <zephyr/drivers/gpio.h>
+#include <SEGGER_RTT.h>
 
-#include "drivers/ble/ble_driver.h"
 #include "drivers/imu/imu_driver.h"
-#include "drivers/imu/imu_processing.h"
 
-#define IMU_STACK_SIZE 8192 //temporary, before: 4096
-#define IMU_PRIORITY   5
-
-K_THREAD_STACK_DEFINE(imu_stack, IMU_STACK_SIZE);
-static struct k_thread imu_thread_data;
+#define LED_NODE DT_NODELABEL(gpio1)
+#define LED_PIN 12
 
 int main(void)
 {
-    k_sleep(K_SECONDS(2));
-    printk("MAIN START\n");
+    const struct device *gpio1 = DEVICE_DT_GET(LED_NODE);
 
-    ble_init();
+    SEGGER_RTT_WriteString(0, "BOOT\r\n");
 
-    while (!ble_is_stack_ready()) {
-        printk("Waiting for BLE ready...\n");
-        k_sleep(K_MSEC(100));
+    if (device_is_ready(gpio1)) {
+        gpio_pin_configure(gpio1, LED_PIN, GPIO_OUTPUT_INACTIVE);
     }
 
-    printk("After ble_init\n");
+    SEGGER_RTT_WriteString(0, "Before IMU init\r\n");
 
-    ble_post_init();
-    printk("After ble_post_init\n");
+    int ret = imu_init();
 
-    if (imu_init() != 0) {
-        printk("IMU init failed\n");
-        return 0;
+    if (ret != 0) {
+        SEGGER_RTT_WriteString(0, "IMU init failed\r\n");
+        while (1) {
+            gpio_pin_toggle(gpio1, LED_PIN);
+            k_sleep(K_MSEC(200));
+        }
     }
-    printk("After imu_init\n");
 
-    imu_processing_init();
-    imu_ringbuffer_init();
-
-    k_thread_create(&imu_thread_data,
-                    imu_stack,
-                    IMU_STACK_SIZE,
-                    imu_thread,
-                    NULL, NULL, NULL,
-                    IMU_PRIORITY,
-                    0,
-                    K_NO_WAIT);
-
-    printk("After k_thread_create\n");
+    SEGGER_RTT_WriteString(0, "IMU init OK\r\n");
 
     while (1) {
-        //printk("main alive\n");
-        k_sleep(K_SECONDS(1));
+        gpio_pin_toggle(gpio1, LED_PIN);
+        SEGGER_RTT_WriteString(0, "ALIVE + IMU OK\r\n");
+        k_sleep(K_MSEC(500));
     }
 }
+
+// blink led test for nRF52840, using Zephyr RTOS and SEGGER RTT for logging
+// #include <zephyr/kernel.h>
+// #include <zephyr/drivers/gpio.h>
+// #include <SEGGER_RTT.h>
+
+// #define LED_NODE DT_NODELABEL(gpio1)
+// #define LED_PIN 12
+
+// int main(void)
+// {
+//     const struct device *gpio1 = DEVICE_DT_GET(LED_NODE);
+
+//     SEGGER_RTT_WriteString(0, "BOOT\r\n");
+
+//     if (!device_is_ready(gpio1)) {
+//         while (1) {
+//             SEGGER_RTT_WriteString(0, "GPIO1 not ready\r\n");
+//             k_sleep(K_MSEC(500));
+//         }
+//     }
+
+//     gpio_pin_configure(gpio1, LED_PIN, GPIO_OUTPUT_INACTIVE);
+
+//     while (1) {
+//         gpio_pin_toggle(gpio1, LED_PIN);
+//         SEGGER_RTT_WriteString(0, "ALIVE\r\n");
+//         k_sleep(K_MSEC(500));
+//     }
+// }
+
+// #include <zephyr/kernel.h>
+// #include <zephyr/sys/printk.h>
+// #include <zephyr/bluetooth/bluetooth.h>
+// #include <zephyr/bluetooth/gatt.h>
+// #include <zephyr/bluetooth/gap.h>
+// #include <zephyr/bluetooth/hci.h>
+
+// #include "drivers/ble/ble_driver.h"
+// #include "drivers/imu/imu_driver.h"
+// #include "drivers/imu/imu_processing.h"
+// #include "drivers/swing_manager/swing_manager.h"
+
+// /* =========================
+// THREAD CONFIG
+// ========================= */
+
+// #define IMU_STACK_SIZE    8192   // lidt stor til debug (ok)
+// #define IMU_PRIORITY      5
+
+// #define SWING_STACK_SIZE  4096
+// #define SWING_PRIORITY    5
+
+// /* =========================
+// THREAD STACKS
+// ========================= */
+
+// K_THREAD_STACK_DEFINE(imu_stack, IMU_STACK_SIZE);
+// static struct k_thread imu_thread_data;
+
+// K_THREAD_STACK_DEFINE(swing_stack, SWING_STACK_SIZE);
+// static struct k_thread swing_thread_data;
+
+// /* =========================
+// MAIN
+// ========================= */
+
+// int main(void)
+// {
+// k_sleep(K_SECONDS(2));
+// printk("MAIN START\n");
+
+
+// /* -------- BLE INIT -------- */
+// ble_init();
+
+// while (!ble_is_stack_ready()) {
+//     printk("Waiting for BLE ready...\n");
+//     k_sleep(K_MSEC(100));
+// }
+
+// printk("After ble_init\n");
+
+// ble_post_init();
+// printk("After ble_post_init\n");
+
+// /* -------- IMU INIT -------- */
+// if (imu_init() != 0) {
+//     printk("IMU init failed\n");
+//     return 0;
+// }
+
+// printk("After imu_init\n");
+
+// /* -------- PROCESSING INIT -------- */
+// imu_processing_init();
+// imu_ringbuffer_init();
+
+// /* -------- IMU THREAD -------- */
+// k_thread_create(&imu_thread_data,
+//                 imu_stack,
+//                 IMU_STACK_SIZE,
+//                 imu_thread,
+//                 NULL, NULL, NULL,
+//                 IMU_PRIORITY,
+//                 0,
+//                 K_NO_WAIT);
+
+// printk("IMU thread started\n");
+
+// /* -------- SWING MANAGER THREAD -------- */
+// k_thread_create(&swing_thread_data,
+//                 swing_stack,
+//                 SWING_STACK_SIZE,
+//                 swing_manager_thread,
+//                 NULL, NULL, NULL,
+//                 SWING_PRIORITY,
+//                 0,
+//                 K_NO_WAIT);
+
+// printk("Swing manager thread started\n");
+
+// /* -------- MAIN LOOP -------- */
+// while (1) {
+//     k_sleep(K_SECONDS(1));
+// }
+
+
+// }
+
 
 // int main(void)
 // {

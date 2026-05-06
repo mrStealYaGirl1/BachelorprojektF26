@@ -7,7 +7,7 @@ from datetime import datetime
 from bleak import BleakClient, BleakScanner
 
 DEVICE_NAME = "GOLF_IMU_V2"
-CHAR_UUID = "99887766-5544-3322-1100-ffeeddccbbaa"
+CHAR_UUID = "0000fff1-0000-1000-8000-00805f9b34fb"
 
 # =========================================================
 # Packet type IDs
@@ -28,7 +28,7 @@ BLE_PKT_TYPE_IMU = 2
 # uint32_t ts_ms;
 # uint16_t seq;
 # =========================================================
-BLE_IMU_SAMPLES_PER_PKT = 5
+BLE_IMU_SAMPLES_PER_PKT = 11
 
 IMU_HEADER_FMT = "<HHH"          # event_id, packet_type, sample_count
 IMU_SAMPLE_FMT = "<hhhhhhIH"     # ax ay az gx gy gz ts_ms seq
@@ -230,14 +230,16 @@ def decode_meta_packet(data: bytes):
 
 
 def decode_imu_packet(data: bytes):
-    if len(data) != IMU_PKT_SIZE:
-        print(f"Unexpected IMU packet size: {len(data)} (expected {IMU_PKT_SIZE})")
+    if len(data) < IMU_HEADER_SIZE:
+        print(f"Packet too small: {len(data)}")
         return
 
     event_id, packet_type, sample_count = struct.unpack_from(IMU_HEADER_FMT, data, 0)
 
-    if sample_count > BLE_IMU_SAMPLES_PER_PKT:
-        print(f"Invalid IMU sample_count={sample_count} for event {event_id}")
+    expected_size = IMU_HEADER_SIZE + sample_count * IMU_SAMPLE_SIZE
+
+    if len(data) != expected_size:
+        print(f"Size mismatch: got {len(data)}, expected {expected_size}, samples={sample_count}")
         return
 
     offset = IMU_HEADER_SIZE
@@ -293,21 +295,28 @@ async def main():
     devices = await BleakScanner.discover()
 
     target = None
+
     for d in devices:
-        print(d.name, d.address)
-        if d.name and DEVICE_NAME in d.name:
+        print("NAME:", d.name, "ADDR:", d.address)
+
+        if d.name and "GOLF_IMU_V2" in d.name:
             target = d
 
     if target is None:
-        print("Device not found")
-        close_csv_files()
+        print("❌ Device not found")
         return
 
-    print("Found device:", target.address)
+    print("Connecting to:", target.address)
 
     try:
         async with BleakClient(target.address) as client:
             print("Connected!")
+
+            print("Services:")
+            for service in client.services:
+                print(service)
+                for char in service.characteristics:
+                    print("  ", char.uuid)
 
             await client.start_notify(CHAR_UUID, notification_handler)
             print("Notifications started. Waiting for data...")
@@ -318,6 +327,9 @@ async def main():
     except KeyboardInterrupt:
         print("Stopping by user...")
 
+    except Exception as e:
+        print(f"ERROR: {e}")
+
     finally:
         close_csv_files()
 
@@ -325,7 +337,9 @@ async def main():
             print("\nSummary:")
             for event_id in sorted(event_sample_counts.keys()):
                 count = event_sample_counts[event_id]
-                expected = meta_per_event.get(event_id, {}).get("total_samples", EXPECTED_SAMPLES_PER_EVENT)
+                expected = meta_per_event.get(event_id, {}).get(
+                    "total_samples", EXPECTED_SAMPLES_PER_EVENT
+                )
                 status = "OK" if count >= expected else "INCOMPLETE"
                 print(f"Event {event_id}: {count}/{expected} samples ({status})")
 
