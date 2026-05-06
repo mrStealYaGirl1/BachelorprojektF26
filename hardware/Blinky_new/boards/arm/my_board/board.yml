@@ -1,0 +1,5 @@
+board:
+  name: my_board
+  vendor: custom
+  socs:
+    - name: nrf52840

@@ -1,0 +1,2 @@
+config BOARD_MY_BOARD
+    select SOC_NRF52840
