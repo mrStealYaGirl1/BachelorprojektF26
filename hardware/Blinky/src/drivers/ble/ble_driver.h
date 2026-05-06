@@ -1,6 +1,8 @@
 #pragma once
 
 #include <stdint.h>
+#include <stdbool.h>
+#include "../imu/imu_driver.h"
 
 /* =========================
    IMU DATA STRUCTURES
@@ -10,10 +12,12 @@
 /* ❌ FJERNET: #pragma pack(pop)     */
 /* 👉 Zephyr + ARM håndterer alignment korrekt selv */
 
+#define BLE_SAMPLES_PER_PKT 5
+
 /* ---------------------------------
    SAMPLE STRUCT (uændret)
 --------------------------------- */
-typedef struct
+typedef struct __packed
 {
     int16_t ax;
     int16_t ay;
@@ -31,20 +35,13 @@ typedef struct
 /* ---------------------------------
    PACKET STRUCT (RETTET)
 --------------------------------- */
-typedef struct
+typedef struct __packed
 {
     uint16_t event_id;
     uint16_t packet_type;
     uint16_t sample_count;
 
-    /* 🔥 RETTET:
-       FRA:
-       ble_imu_sample_t samples[1];
-
-       TIL:
-       enkelt sample (stabil memory layout)
-    */
-    ble_imu_sample_t sample;
+    ble_imu_sample_t samples[BLE_SAMPLES_PER_PKT];
 
 } ble_imu_packet_t;
 
@@ -53,4 +50,9 @@ typedef struct
 ========================= */
 
 void ble_init(void);
+bool ble_is_stack_ready(void);
 void ble_send_test(void);
+void ble_send_imu_sample(const imu_sample_t *sample);
+void ble_post_init(void);
+
+//  hvorfor kommer det her ikke med i mit commmit AAAARRARARARG
