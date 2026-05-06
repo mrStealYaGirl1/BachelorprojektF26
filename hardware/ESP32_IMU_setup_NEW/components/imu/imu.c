@@ -817,12 +817,13 @@ static void reset_impact_detector(void)
     peak_print_counter = 0;
 }
 
+
 /* =====================================================
-   IMU CSV LOGGER (til analyse af drift, ikke real-time) - print til UART i CSV format, kan fanges af en PC og gemmes i en fil
+   IMU CSV LOGGER (til analyse af drift for gyro og accelerometer, ikke real-time) - print til UART i CSV format, kan fanges af en PC og gemmes i en fil
 ===================================================== */
 // Hvis denne skal bruges - husk at fjerne ESP_LOGI'er i imu_init og imu_calibrate for at undgå at forstyrre CSV output
 
-#define IMU_LOG_DURATION_MINUTES   4
+#define IMU_LOG_DURATION_MINUTES   10
 #define IMU_LOG_SAMPLE_PERIOD_MS   5   // 200 Hz
 
 void imu_csv_logger_task(void *pvParameters)
@@ -835,7 +836,11 @@ void imu_csv_logger_task(void *pvParameters)
     int64_t start_us = esp_timer_get_time();
     int64_t duration_us = (int64_t)IMU_LOG_DURATION_MINUTES * 60LL * 1000000LL;
 
-    printf("t_us,gx_raw,gy_raw,gz_raw,gx_corr,gy_corr,gz_corr\n");
+    printf("t_us,"
+           "ax_raw,ay_raw,az_raw,"
+           "ax_corr,ay_corr,az_corr,acc_mag,acc_dynamic,"
+           "gx_raw,gy_raw,gz_raw,"
+           "gx_corr,gy_corr,gz_corr\n");
 
     while ((esp_timer_get_time() - start_us) < duration_us)
     {
@@ -843,17 +848,40 @@ void imu_csv_logger_task(void *pvParameters)
         {
             int64_t t_us = esp_timer_get_time();
 
+            int16_t ax_raw = sensor_data.acc.x;
+            int16_t ay_raw = sensor_data.acc.y;
+            int16_t az_raw = sensor_data.acc.z;
+
             int16_t gx_raw = sensor_data.gyr.x;
             int16_t gy_raw = sensor_data.gyr.y;
             int16_t gz_raw = sensor_data.gyr.z;
+
+            float ax_ms2 = (ax_raw / 16384.0f) * 9.81f;
+            float ay_ms2 = (ay_raw / 16384.0f) * 9.81f;
+            float az_ms2 = (az_raw / 16384.0f) * 9.81f;
+
+            float ax_corr = ax_ms2 - acc_bias_x;
+            float ay_corr = ay_ms2 - acc_bias_y;
+            float az_corr = az_ms2 - acc_bias_z;
+
+            float acc_mag = sqrtf(ax_corr * ax_corr +
+                                  ay_corr * ay_corr +
+                                  az_corr * az_corr);
+
+            float acc_dynamic = acc_mag - 9.81f;
 
             float gx_corr = (gx_raw * (2000.0f / 32768.0f)) - gyro_bias_x;
             float gy_corr = (gy_raw * (2000.0f / 32768.0f)) - gyro_bias_y;
             float gz_corr = (gz_raw * (2000.0f / 32768.0f)) - gyro_bias_z;
 
-            // logger både raw og korrigerede gyro-værdier for at kunne analysere drift og bias
-            printf("%lld,%d,%d,%d,%.6f,%.6f,%.6f\n",
+            printf("%lld,"
+                   "%d,%d,%d,"
+                   "%.6f,%.6f,%.6f,%.6f,%.6f,"
+                   "%d,%d,%d,"
+                   "%.6f,%.6f,%.6f\n",
                    t_us,
+                   ax_raw, ay_raw, az_raw,
+                   ax_corr, ay_corr, az_corr, acc_mag, acc_dynamic,
                    gx_raw, gy_raw, gz_raw,
                    gx_corr, gy_corr, gz_corr);
         }
@@ -863,6 +891,7 @@ void imu_csv_logger_task(void *pvParameters)
 
     vTaskDelete(NULL);
 }
+
 
 /* =====================================================
    TASK
