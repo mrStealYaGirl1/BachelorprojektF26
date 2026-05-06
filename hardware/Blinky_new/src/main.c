@@ -1,6 +1,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/drivers/gpio.h>
 #include <SEGGER_RTT.h>
+#include <zephyr/sys/printk.h>
 
 #include "drivers/imu/imu_driver.h"
 
@@ -10,6 +11,7 @@
 int main(void)
 {
     const struct device *gpio1 = DEVICE_DT_GET(LED_NODE);
+    imu_sample_t sample;
 
     SEGGER_RTT_WriteString(0, "BOOT\r\n");
 
@@ -19,9 +21,7 @@ int main(void)
 
     SEGGER_RTT_WriteString(0, "Before IMU init\r\n");
 
-    int ret = imu_init();
-
-    if (ret != 0) {
+    if (imu_init() != 0) {
         SEGGER_RTT_WriteString(0, "IMU init failed\r\n");
         while (1) {
             gpio_pin_toggle(gpio1, LED_PIN);
@@ -32,11 +32,59 @@ int main(void)
     SEGGER_RTT_WriteString(0, "IMU init OK\r\n");
 
     while (1) {
+        imu_get_latest(&sample);
+
+        printk("ACC: %d %d %d | GYRO: %d %d %d | t=%llu\n",
+               sample.ax, sample.ay, sample.az,
+               sample.gx, sample.gy, sample.gz,
+               sample.timestamp_ms);
+
         gpio_pin_toggle(gpio1, LED_PIN);
-        SEGGER_RTT_WriteString(0, "ALIVE + IMU OK\r\n");
-        k_sleep(K_MSEC(500));
+        k_sleep(K_MSEC(100));
     }
 }
+
+
+// SPI OK
+// #include <zephyr/kernel.h>
+// #include <zephyr/drivers/gpio.h>
+// #include <SEGGER_RTT.h>
+
+// #include "drivers/imu/imu_driver.h"
+
+// #define LED_NODE DT_NODELABEL(gpio1)
+// #define LED_PIN 12
+
+// int main(void)
+// {
+//     const struct device *gpio1 = DEVICE_DT_GET(LED_NODE);
+
+//     SEGGER_RTT_WriteString(0, "BOOT\r\n");
+
+//     if (device_is_ready(gpio1)) {
+//         gpio_pin_configure(gpio1, LED_PIN, GPIO_OUTPUT_INACTIVE);
+//     }
+
+//     SEGGER_RTT_WriteString(0, "Before IMU init\r\n");
+
+//     int ret = imu_init();
+
+//     if (ret != 0) {
+//         SEGGER_RTT_WriteString(0, "IMU init failed\r\n");
+//         while (1) {
+//             gpio_pin_toggle(gpio1, LED_PIN);
+//             k_sleep(K_MSEC(200));
+//         }
+//     }
+
+//     SEGGER_RTT_WriteString(0, "IMU init OK\r\n");
+
+//     while (1) {
+//         gpio_pin_toggle(gpio1, LED_PIN);
+//         SEGGER_RTT_WriteString(0, "ALIVE + IMU OK\r\n");
+//         k_sleep(K_MSEC(500));
+//     }
+// }
 
 // blink led test for nRF52840, using Zephyr RTOS and SEGGER RTT for logging
 // #include <zephyr/kernel.h>
