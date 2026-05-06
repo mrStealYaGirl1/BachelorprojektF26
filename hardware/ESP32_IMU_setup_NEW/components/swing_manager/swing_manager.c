@@ -235,6 +235,7 @@ void swing_manager_task(void *pvParameters)
 
                 uint16_t seq = 0;
 
+                ESP_LOGI("QUEUE_FLOW", "enqueue_start");
                 int64_t ble_start_us = esp_timer_get_time();
                 uint32_t packets_queued = 0;
                 uint32_t queue_drop_count = 0;
@@ -328,9 +329,11 @@ void swing_manager_task(void *pvParameters)
                                   
                 }
 
+                int64_t enqueue_done_us = esp_timer_get_time(); // tidspunkt hvor alle pakker er blevet sendt til køen (ikke nødvendigvis sendt over BLE endnu)
+                ESP_LOGI("QUEUE_FLOW",
+                    "enqueue_duration_ms=%.3f",
+                    (enqueue_done_us - ble_start_us) / 1000.0f);
 
-
-                
                 
                 /* vent til BLE TX-task faktisk er færdig med at sende */
                 while (ble_manager_is_imu_tx_busy())

@@ -1,0 +1,478 @@
+
+I (412) BLE_MANAGER: BLE synced (addr_type=0)
+I (414) BLE_MANAGER: Advertising (connectable) started
+I (415) IMU: Initializing BMI270...
+I (1191) IMU: Calibrating IMU... Keep it still!
+I (3692) IMU: Calibration done
+I (3692) IMU: IMU ready
+I (4193) SWING: ADDRESS detected
+I (14427) BLE_MANAGER: Connected (handle=1)
+I (15323) SWING: RESET from ADDRESS to IDLE (wrong move: gz=-0.5 gx=12.2 gy=37.9 gyro_mag=39.8)
+I (16211) BLE_MANAGER: Subscribe: notify=1
+I (21513) SWING: ADDRESS detected
+I (22108) SWING: BACKSWING (gz=11.3)
+I (22593) SWING: FORWARD at zero-cross (peak_gz=47.3 gz_now=-2.9)
+W (23023) IMPACT_LATENCY: impact_idx=266 detect_idx=266 sample_delay=0 sample_delay_ms=0.0 impact_us=22729564 detect_sample_us=22729564 detect_us=22729570 software_latency_ms=0.006 total_latency_ms=0.006
+W (23030) IMPACT_DEBUG: IMPACT! E=320.41 dE=249.76
+W (23034) IMPACT_NOTIFY: impact_to_notify_ms=11.47
+W (23039) CAPTURE_START: impact_to_capture_start_ms=15.981
+I (23047) SWING: Impact event started
+I (23223) SWING: SWING END
+I (25052) SWING: Processing swing event
+I (25053) IMU: Ignoring impacts while BLE IMU TX is busy
+I (25073) IMU: BLE IMU TX finished, impact detection enabled again
+I (25272) SWING: Pre duration:  3.000 sec
+I (25272) SWING: Post duration: 1.995 sec
+I (25272) SWING: Total duration: 4.995 sec
+I (25273) IMU: Ignoring impacts while BLE IMU TX is busy
+I (28873) SWING: Swing event sent over BLE
+I (28873) IMU: BLE IMU TX finished, impact detection enabled again
+I (28873) SWING: BLE queueing finished
+I (28875) SWING: Packets queued: 200
+I (28878) SWING: Queue drops: 0
+I (28881) SWING: Queueing time: 3.601 sec
+I (28885) SWING: Queue rate: 55.5 packets/sec
+I (28889) SWING: Estimated queue throughput: 5.21 kB/s
+I (28894) SWING: Packet size: 96 bytes
+I (28897) SWING: Total queued data: 18.75 kB
+I (28901) SWING: ACC overflow count: 0
+I (28905) SWING: GYRO overflow count: 0
+I (29343) SWING: ADDRESS detected
+I (30513) SWING: BACKSWING (gz=11.6)
+I (31048) SWING: FORWARD at zero-cross (peak_gz=44.3 gz_now=-2.1)
+W (31608) IMPACT_LATENCY: impact_idx=783 detect_idx=783 sample_delay=0 sample_delay_ms=0.0 impact_us=31314564 detect_sample_us=31314564 detect_us=31314570 software_latency_ms=0.006 total_latency_ms=0.006
+W (31615) IMPACT_DEBUG: IMPACT! E=248.13 dE=180.51
+W (31619) IMPACT_NOTIFY: impact_to_notify_ms=11.50
+W (31624) CAPTURE_START: impact_to_capture_start_ms=16.008
+I (31632) SWING: Impact event started
+I (31928) SWING: SWING END
+I (33637) SWING: Processing swing event
+I (33638) IMU: Ignoring impacts while BLE IMU TX is busy
+I (33658) IMU: BLE IMU TX finished, impact detection enabled again
+I (33857) SWING: Pre duration:  3.000 sec
+I (33857) SWING: Post duration: 1.995 sec
+I (33857) SWING: Total duration: 4.995 sec
+I (33858) IMU: Ignoring impacts while BLE IMU TX is busy
+I (37458) SWING: Swing event sent over BLE
+I (37458) IMU: BLE IMU TX finished, impact detection enabled again
+I (37458) SWING: BLE queueing finished
+I (37460) SWING: Packets queued: 200
+I (37463) SWING: ADDRESS detected
+I (37463) SWING: Queue drops: 0
+I (37469) SWING: Queueing time: 3.601 sec
+I (37473) SWING: Queue rate: 55.5 packets/sec
+I (37477) SWING: Estimated queue throughput: 5.21 kB/s
+I (37482) SWING: Packet size: 96 bytes
+I (37485) SWING: Total queued data: 18.75 kB
+I (37489) SWING: ACC overflow count: 0
+I (37493) SWING: GYRO overflow count: 0
+I (41233) SWING: RESET from ADDRESS to IDLE (wrong move: gz=6.0 gx=0.3 gy=37.2 gyro_mag=37.7)
+I (43713) SWING: ADDRESS detected
+I (45038) SWING: RESET from ADDRESS to IDLE (wrong move: gz=-2.8 gx=-31.2 gy=0.1 gyro_mag=31.3)
+I (47433) SWING: ADDRESS detected
+I (47923) SWING: RESET from ADDRESS to IDLE (wrong move: gz=2.7 gx=0.3 gy=-53.9 gyro_mag=54.0)
+I (54208) SWING: ADDRESS detected
+I (54868) SWING: BACKSWING (gz=11.3)
+I (55413) SWING: FORWARD at zero-cross (peak_gz=47.0 gz_now=-1.6)
+W (55953) IMPACT_LATENCY: impact_idx=852 detect_idx=852 sample_delay=0 sample_delay_ms=0.0 impact_us=55659564 detect_sample_us=55659564 detect_us=55659570 software_latency_ms=0.006 total_latency_ms=0.006
+W (55960) IMPACT_DEBUG: IMPACT! E=108.54 dE=30.09
+W (55964) IMPACT_NOTIFY: impact_to_notify_ms=11.37
+W (55969) CAPTURE_START: impact_to_capture_start_ms=15.880
+I (55977) SWING: Impact event started
+I (56418) SWING: SWING END
+I (57982) SWING: Processing swing event
+I (57983) IMU: Ignoring impacts while BLE IMU TX is busy
+I (58003) IMU: BLE IMU TX finished, impact detection enabled again
+I (58048) SWING: ADDRESS detected
+I (58202) SWING: Pre duration:  3.000 sec
+I (58202) SWING: Post duration: 1.995 sec
+I (58202) SWING: Total duration: 4.995 sec
+I (58203) IMU: Ignoring impacts while BLE IMU TX is busy
+I (61803) SWING: Swing event sent over BLE
+I (61803) IMU: BLE IMU TX finished, impact detection enabled again
+I (61803) SWING: BLE queueing finished
+I (61805) SWING: Packets queued: 200
+I (61808) SWING: Queue drops: 0
+I (61811) SWING: Queueing time: 3.601 sec
+I (61815) SWING: Queue rate: 55.5 packets/sec
+I (61819) SWING: Estimated queue throughput: 5.21 kB/s
+I (61824) SWING: Packet size: 96 bytes
+I (61827) SWING: Total queued data: 18.75 kB
+I (61831) SWING: ACC overflow count: 0
+I (61835) SWING: GYRO overflow count: 0
+I (66933) SWING: BACKSWING (gz=11.2)
+I (67578) SWING: FORWARD at zero-cross (peak_gz=36.9 gz_now=-2.0)
+W (68163) IMPACT_LATENCY: impact_idx=894 detect_idx=894 sample_delay=0 sample_delay_ms=0.0 impact_us=67869564 detect_sample_us=67869564 detect_us=67869570 software_latency_ms=0.006 total_latency_ms=0.006
+W (68170) IMPACT_DEBUG: IMPACT! E=98.53 dE=46.75
+W (68174) IMPACT_NOTIFY: impact_to_notify_ms=11.29
+W (68179) CAPTURE_START: impact_to_capture_start_ms=15.793
+I (68187) SWING: Impact event started
+I (68953) SWING: SWING END
+I (69878) SWING: ADDRESS detected
+I (70192) SWING: Processing swing event
+I (70193) IMU: Ignoring impacts while BLE IMU TX is busy
+I (70213) IMU: BLE IMU TX finished, impact detection enabled again
+I (70412) SWING: Pre duration:  3.000 sec
+I (70412) SWING: Post duration: 1.995 sec
+I (70412) SWING: Total duration: 4.995 sec
+I (70413) IMU: Ignoring impacts while BLE IMU TX is busy
+I (74013) SWING: Swing event sent over BLE
+I (74013) IMU: BLE IMU TX finished, impact detection enabled again
+I (74013) SWING: BLE queueing finished
+I (74015) SWING: Packets queued: 200
+I (74018) SWING: Queue drops: 0
+I (74021) SWING: Queueing time: 3.600 sec
+I (74025) SWING: Queue rate: 55.5 packets/sec
+I (74029) SWING: Estimated queue throughput: 5.21 kB/s
+I (74034) SWING: Packet size: 96 bytes
+I (74037) SWING: Total queued data: 18.75 kB
+I (74041) SWING: ACC overflow count: 0
+I (74045) SWING: GYRO overflow count: 0
+I (76638) SWING: BACKSWING (gz=11.0)
+I (77258) SWING: FORWARD at zero-cross (peak_gz=35.7 gz_now=-1.9)
+W (77833) IMPACT_LATENCY: impact_idx=428 detect_idx=428 sample_delay=0 sample_delay_ms=0.0 impact_us=77539564 detect_sample_us=77539564 detect_us=77539570 software_latency_ms=0.006 total_latency_ms=0.006
+W (77840) IMPACT_DEBUG: IMPACT! E=121.47 dE=42.68
+W (77844) IMPACT_NOTIFY: impact_to_notify_ms=11.40
+W (77849) CAPTURE_START: impact_to_capture_start_ms=15.907
+I (77857) SWING: Impact event started
+I (78363) SWING: SWING END
+I (79862) SWING: Processing swing event
+I (79863) IMU: Ignoring impacts while BLE IMU TX is busy
+I (79883) IMU: BLE IMU TX finished, impact detection enabled again
+I (80033) SWING: ADDRESS detected
+I (80082) SWING: Pre duration:  3.000 sec
+I (80082) SWING: Post duration: 1.995 sec
+I (80082) SWING: Total duration: 4.995 sec
+I (80083) IMU: Ignoring impacts while BLE IMU TX is busy
+I (83683) SWING: Swing event sent over BLE
+I (83683) IMU: BLE IMU TX finished, impact detection enabled again
+I (83683) SWING: BLE queueing finished
+I (83685) SWING: Packets queued: 200
+I (83688) SWING: Queue drops: 0
+I (83691) SWING: Queueing time: 3.601 sec
+I (83693) SWING: RESET from ADDRESS to IDLE (wrong move: gz=-15.1 gx=4.1 gy=-6.4 gyro_mag=16.9)
+I (83695) SWING: Queue rate: 55.5 packets/sec
+I (83707) SWING: Estimated queue throughput: 5.21 kB/s
+I (83712) SWING: Packet size: 96 bytes
+I (83716) SWING: Total queued data: 18.75 kB
+I (83720) SWING: ACC overflow count: 0
+I (83723) SWING: GYRO overflow count: 0
+I (88148) SWING: ADDRESS detected
+I (92548) SWING: RESET from ADDRESS to IDLE (wrong move: gz=7.3 gx=-5.2 gy=-39.5 gyro_mag=40.6)
+I (95693) SWING: ADDRESS detected
+I (96798) SWING: RESET from ADDRESS to IDLE (wrong move: gz=-10.8 gx=3.0 gy=-1.7 gyro_mag=11.3)
+I (100438) SWING: ADDRESS detected
+I (101443) SWING: RESET from ADDRESS to IDLE (wrong move: gz=6.9 gx=-6.3 gy=-46.3 gyro_mag=47.3)
+I (105853) SWING: ADDRESS detected
+I (106428) SWING: BACKSWING (gz=11.0)
+I (107148) SWING: FORWARD at zero-cross (peak_gz=44.5 gz_now=-2.5)
+W (107703) IMPACT_LATENCY: impact_idx=402 detect_idx=402 sample_delay=0 sample_delay_ms=0.0 impact_us=107409564 detect_sample_us=107409564 detect_us=107409570 software_latency_ms=0.006 total_latency_ms=0.006
+W (107710) IMPACT_DEBUG: IMPACT! E=215.45 dE=138.87
+W (107715) IMPACT_NOTIFY: impact_to_notify_ms=11.96
+W (107719) CAPTURE_START: impact_to_capture_start_ms=16.560
+I (107727) SWING: Impact event started
+I (108153) SWING: SWING END
+I (109732) SWING: Processing swing event
+I (109733) IMU: Ignoring impacts while BLE IMU TX is busy
+I (109753) IMU: BLE IMU TX finished, impact detection enabled again
+I (109952) SWING: Pre duration:  3.000 sec
+I (109952) SWING: Post duration: 1.995 sec
+I (109952) SWING: Total duration: 4.995 sec
+I (109953) IMU: Ignoring impacts while BLE IMU TX is busy
+I (113553) SWING: Swing event sent over BLE
+I (113553) IMU: BLE IMU TX finished, impact detection enabled again
+I (113553) SWING: BLE queueing finished
+I (113555) SWING: Packets queued: 200
+I (113559) SWING: Queue drops: 0
+I (113561) SWING: Queueing time: 3.601 sec
+I (113565) SWING: Queue rate: 55.5 packets/sec
+I (113569) SWING: Estimated queue throughput: 5.21 kB/s
+I (113574) SWING: Packet size: 96 bytes
+I (113578) SWING: Total queued data: 18.75 kB
+I (113582) SWING: ACC overflow count: 0
+I (113586) SWING: GYRO overflow count: 0
+I (114053) SWING: ADDRESS detected
+I (116313) SWING: BACKSWING (gz=11.3)
+I (116898) SWING: FORWARD at zero-cross (peak_gz=50.6 gz_now=-1.0)
+W (117543) IMPACT_LATENCY: impact_idx=1170 detect_idx=1170 sample_delay=0 sample_delay_ms=0.0 impact_us=117249564 detect_sample_us=117249564 detect_us=117249570 software_latency_ms=0.006 total_latency_ms=0.006
+W (117550) IMPACT_DEBUG: IMPACT! E=341.71 dE=288.54
+W (117555) IMPACT_NOTIFY: impact_to_notify_ms=12.09
+W (117559) CAPTURE_START: impact_to_capture_start_ms=16.690
+I (117567) SWING: Impact event started
+I (118038) SWING: SWING END
+I (119572) SWING: Processing swing event
+I (119573) IMU: Ignoring impacts while BLE IMU TX is busy
+I (119593) IMU: BLE IMU TX finished, impact detection enabled again
+I (119743) SWING: ADDRESS detected
+I (119792) SWING: Pre duration:  3.000 sec
+I (119792) SWING: Post duration: 1.995 sec
+I (119792) SWING: Total duration: 4.995 sec
+I (119793) IMU: Ignoring impacts while BLE IMU TX is busy
+I (123393) SWING: Swing event sent over BLE
+I (123393) IMU: BLE IMU TX finished, impact detection enabled again
+I (123393) SWING: BLE queueing finished
+I (123395) SWING: Packets queued: 200
+I (123399) SWING: Queue drops: 0
+I (123401) SWING: Queueing time: 3.601 sec
+I (123405) SWING: Queue rate: 55.5 packets/sec
+I (123409) SWING: Estimated queue throughput: 5.21 kB/s
+I (123414) SWING: Packet size: 96 bytes
+I (123418) SWING: Total queued data: 18.75 kB
+I (123422) SWING: ACC overflow count: 0
+I (123426) SWING: GYRO overflow count: 0
+I (123838) SWING: BACKSWING (gz=10.3)
+I (124653) SWING: FORWARD at zero-cross (peak_gz=29.6 gz_now=-1.6)
+W (125393) IMPACT_LATENCY: impact_idx=340 detect_idx=340 sample_delay=0 sample_delay_ms=0.0 impact_us=125099564 detect_sample_us=125099564 detect_us=125099570 software_latency_ms=0.006 total_latency_ms=0.006
+W (125400) IMPACT_DEBUG: IMPACT! E=137.11 dE=76.40
+W (125405) IMPACT_NOTIFY: impact_to_notify_ms=11.78
+W (125409) CAPTURE_START: impact_to_capture_start_ms=16.379
+I (125417) SWING: Impact event started
+I (125723) SWING: SWING END
+I (127118) SWING: ADDRESS detected
+I (127422) SWING: Processing swing event
+I (127423) IMU: Ignoring impacts while BLE IMU TX is busy
+I (127443) IMU: BLE IMU TX finished, impact detection enabled again
+I (127642) SWING: Pre duration:  3.000 sec
+I (127642) SWING: Post duration: 1.995 sec
+I (127642) SWING: Total duration: 4.995 sec
+I (127643) IMU: Ignoring impacts while BLE IMU TX is busy
+I (131243) SWING: Swing event sent over BLE
+I (131243) IMU: BLE IMU TX finished, impact detection enabled again
+I (131243) SWING: BLE queueing finished
+I (131245) SWING: Packets queued: 200
+I (131249) SWING: Queue drops: 0
+I (131251) SWING: Queueing time: 3.601 sec
+I (131255) SWING: Queue rate: 55.5 packets/sec
+I (131259) SWING: Estimated queue throughput: 5.21 kB/s
+I (131264) SWING: Packet size: 96 bytes
+I (131268) SWING: Total queued data: 18.75 kB
+I (131272) SWING: ACC overflow count: 0
+I (131276) SWING: GYRO overflow count: 0
+I (135618) SWING: BACKSWING (gz=10.6)
+I (136248) SWING: FORWARD at zero-cross (peak_gz=32.9 gz_now=-1.9)
+W (136843) IMPACT_LATENCY: impact_idx=230 detect_idx=230 sample_delay=0 sample_delay_ms=0.0 impact_us=136549564 detect_sample_us=136549564 detect_us=136549570 software_latency_ms=0.006 total_latency_ms=0.006
+W (136850) IMPACT_DEBUG: IMPACT! E=529.99 dE=449.69
+W (136855) IMPACT_NOTIFY: impact_to_notify_ms=11.94
+W (136859) CAPTURE_START: impact_to_capture_start_ms=16.535
+I (136867) SWING: Impact event started
+I (137413) SWING: SWING END
+I (138872) SWING: Processing swing event
+I (138873) IMU: Ignoring impacts while BLE IMU TX is busy
+I (138893) IMU: BLE IMU TX finished, impact detection enabled again
+I (138908) SWING: ADDRESS detected
+I (139092) SWING: Pre duration:  3.000 sec
+I (139092) SWING: Post duration: 1.995 sec
+I (139092) SWING: Total duration: 4.995 sec
+I (139093) IMU: Ignoring impacts while BLE IMU TX is busy
+I (142693) SWING: Swing event sent over BLE
+I (142693) IMU: BLE IMU TX finished, impact detection enabled again
+I (142693) SWING: BLE queueing finished
+I (142695) SWING: Packets queued: 200
+I (142699) SWING: Queue drops: 0
+I (142701) SWING: Queueing time: 3.601 sec
+I (142705) SWING: Queue rate: 55.5 packets/sec
+I (142709) SWING: Estimated queue throughput: 5.21 kB/s
+I (142714) SWING: Packet size: 96 bytes
+I (142718) SWING: Total queued data: 18.75 kB
+I (142722) SWING: ACC overflow count: 0
+I (142726) SWING: GYRO overflow count: 0
+I (146978) SWING: RESET from ADDRESS to IDLE (wrong move: gz=-1.2 gx=6.1 gy=34.1 gyro_mag=34.6)
+I (150588) SWING: ADDRESS detected
+I (803883) SWING: RESET from ADDRESS to IDLE (wrong move: gz=-11.3 gx=0.2 gy=-32.2 gyro_mag=34.1)
+I (810893) SWING: ADDRESS detected
+I (811463) SWING: RESET from ADDRESS to IDLE (wrong move: gz=3.6 gx=1.5 gy=51.1 gyro_mag=51.2)
+I (815788) SWING: ADDRESS detected
+I (816288) SWING: BACKSWING (gz=11.0)
+I (816948) SWING: FORWARD at zero-cross (peak_gz=42.7 gz_now=-2.0)
+W (817443) IMPACT_LATENCY: impact_idx=750 detect_idx=750 sample_delay=0 sample_delay_ms=0.0 impact_us=817149564 detect_sample_us=817149564 detect_us=817149570 software_latency_ms=0.006 total_latency_ms=0.006
+W (817450) IMPACT_DEBUG: IMPACT! E=279.78 dE=204.42
+W (817455) IMPACT_NOTIFY: impact_to_notify_ms=11.94
+W (817459) CAPTURE_START: impact_to_capture_start_ms=16.534
+I (817467) SWING: Impact event started
+I (817833) SWING: SWING END
+I (819343) SWING: ADDRESS detected
+I (819472) SWING: Processing swing event
+I (819473) IMU: Ignoring impacts while BLE IMU TX is busy
+I (819493) IMU: BLE IMU TX finished, impact detection enabled again
+I (819692) SWING: Pre duration:  3.000 sec
+I (819692) SWING: Post duration: 1.995 sec
+I (819692) SWING: Total duration: 4.995 sec
+I (819693) IMU: Ignoring impacts while BLE IMU TX is busy
+I (823293) SWING: Swing event sent over BLE
+I (823293) IMU: BLE IMU TX finished, impact detection enabled again
+I (823293) SWING: BLE queueing finished
+I (823295) SWING: Packets queued: 200
+I (823299) SWING: Queue drops: 0
+I (823301) SWING: Queueing time: 3.601 sec
+I (823305) SWING: Queue rate: 55.5 packets/sec
+I (823309) SWING: Estimated queue throughput: 5.21 kB/s
+I (823314) SWING: Packet size: 96 bytes
+I (823318) SWING: Total queued data: 18.75 kB
+I (823322) SWING: ACC overflow count: 0
+I (823326) SWING: GYRO overflow count: 0
+I (826908) SWING: BACKSWING (gz=11.9)
+I (827533) SWING: FORWARD at zero-cross (peak_gz=52.4 gz_now=-1.8)
+W (828073) IMPACT_LATENCY: impact_idx=476 detect_idx=476 sample_delay=0 sample_delay_ms=0.0 impact_us=827779564 detect_sample_us=827779564 detect_us=827779570 software_latency_ms=0.006 total_latency_ms=0.006
+W (828080) IMPACT_DEBUG: IMPACT! E=268.67 dE=187.86
+W (828085) IMPACT_NOTIFY: impact_to_notify_ms=11.90
+W (828089) CAPTURE_START: impact_to_capture_start_ms=16.489
+I (828097) SWING: Impact event started
+I (829058) SWING: SWING END
+I (830063) SWING: ADDRESS detected
+I (830102) SWING: Processing swing event
+I (830103) IMU: Ignoring impacts while BLE IMU TX is busy
+I (830123) IMU: BLE IMU TX finished, impact detection enabled again
+I (830322) SWING: Pre duration:  3.000 sec
+I (830322) SWING: Post duration: 1.995 sec
+I (830322) SWING: Total duration: 4.995 sec
+I (830323) IMU: Ignoring impacts while BLE IMU TX is busy
+I (833923) SWING: Swing event sent over BLE
+I (833923) IMU: BLE IMU TX finished, impact detection enabled again
+I (833923) SWING: BLE queueing finished
+I (833925) SWING: Packets queued: 200
+I (833929) SWING: Queue drops: 0
+I (833932) SWING: Queueing time: 3.601 sec
+I (833935) SWING: Queue rate: 55.5 packets/sec
+I (833940) SWING: Estimated queue throughput: 5.21 kB/s
+I (833944) SWING: Packet size: 96 bytes
+I (833948) SWING: Total queued data: 18.75 kB
+I (833952) SWING: ACC overflow count: 0
+I (833956) SWING: GYRO overflow count: 0
+I (838508) SWING: BACKSWING (gz=10.5)
+I (839113) SWING: FORWARD at zero-cross (peak_gz=52.3 gz_now=-1.4)
+W (839633) IMPACT_LATENCY: impact_idx=388 detect_idx=388 sample_delay=0 sample_delay_ms=0.0 impact_us=839339564 detect_sample_us=839339564 detect_us=839339570 software_latency_ms=0.006 total_latency_ms=0.006
+W (839640) IMPACT_DEBUG: IMPACT! E=543.57 dE=472.57
+W (839645) IMPACT_NOTIFY: impact_to_notify_ms=11.93
+W (839649) CAPTURE_START: impact_to_capture_start_ms=16.523
+I (839657) SWING: Impact event started
+I (840073) SWING: SWING END
+I (841388) SWING: ADDRESS detected
+I (841662) SWING: Processing swing event
+I (841663) IMU: Ignoring impacts while BLE IMU TX is busy
+I (841683) IMU: BLE IMU TX finished, impact detection enabled again
+I (841882) SWING: Pre duration:  3.000 sec
+I (841882) SWING: Post duration: 1.995 sec
+I (841882) SWING: Total duration: 4.995 sec
+I (841883) IMU: Ignoring impacts while BLE IMU TX is busy
+I (845483) SWING: Swing event sent over BLE
+I (845483) IMU: BLE IMU TX finished, impact detection enabled again
+I (845483) SWING: BLE queueing finished
+I (845485) SWING: Packets queued: 200
+I (845489) SWING: Queue drops: 0
+I (845491) SWING: Queueing time: 3.601 sec
+I (845495) SWING: Queue rate: 55.5 packets/sec
+I (845499) SWING: Estimated queue throughput: 5.21 kB/s
+I (845504) SWING: Packet size: 96 bytes
+I (845508) SWING: Total queued data: 18.75 kB
+I (845512) SWING: ACC overflow count: 0
+I (845516) SWING: GYRO overflow count: 0
+I (850393) SWING: BACKSWING (gz=10.8)
+I (851013) SWING: FORWARD at zero-cross (peak_gz=43.1 gz_now=-2.2)
+W (851563) IMPACT_LATENCY: impact_idx=374 detect_idx=374 sample_delay=0 sample_delay_ms=0.0 impact_us=851269564 detect_sample_us=851269564 detect_us=851269570 software_latency_ms=0.006 total_latency_ms=0.006
+W (851570) IMPACT_DEBUG: IMPACT! E=353.83 dE=298.80
+W (851575) IMPACT_NOTIFY: impact_to_notify_ms=11.92
+W (851579) CAPTURE_START: impact_to_capture_start_ms=16.516
+I (851587) SWING: Impact event started
+I (852023) SWING: SWING END
+I (853053) SWING: ADDRESS detected
+I (853592) SWING: Processing swing event
+I (853593) IMU: Ignoring impacts while BLE IMU TX is busy
+I (853613) IMU: BLE IMU TX finished, impact detection enabled again
+I (853812) SWING: Pre duration:  3.000 sec
+I (853812) SWING: Post duration: 1.995 sec
+I (853812) SWING: Total duration: 4.995 sec
+I (853813) IMU: Ignoring impacts while BLE IMU TX is busy
+I (857413) SWING: Swing event sent over BLE
+I (857413) IMU: BLE IMU TX finished, impact detection enabled again
+I (857413) SWING: BLE queueing finished
+I (857415) SWING: Packets queued: 200
+I (857419) SWING: Queue drops: 0
+I (857421) SWING: Queueing time: 3.601 sec
+I (857425) SWING: Queue rate: 55.5 packets/sec
+I (857429) SWING: Estimated queue throughput: 5.21 kB/s
+I (857434) SWING: Packet size: 96 bytes
+I (857438) SWING: Total queued data: 18.75 kB
+I (857442) SWING: ACC overflow count: 0
+I (857446) SWING: GYRO overflow count: 0
+I (862273) SWING: BACKSWING (gz=10.8)
+I (862783) SWING: FORWARD at zero-cross (peak_gz=42.0 gz_now=-2.4)
+W (863288) IMPACT_LATENCY: impact_idx=319 detect_idx=319 sample_delay=0 sample_delay_ms=0.0 impact_us=862994564 detect_sample_us=862994564 detect_us=862994570 software_latency_ms=0.006 total_latency_ms=0.006
+W (863295) IMPACT_DEBUG: IMPACT! E=160.98 dE=75.12
+W (863300) IMPACT_NOTIFY: impact_to_notify_ms=11.79
+W (863304) CAPTURE_START: impact_to_capture_start_ms=16.381
+I (863312) SWING: Impact event started
+I (863733) SWING: SWING END
+I (865317) SWING: Processing swing event
+I (865318) IMU: Ignoring impacts while BLE IMU TX is busy
+I (865338) IMU: BLE IMU TX finished, impact detection enabled again
+I (865393) SWING: ADDRESS detected
+I (865537) SWING: Pre duration:  3.000 sec
+I (865537) SWING: Post duration: 1.995 sec
+I (865537) SWING: Total duration: 4.995 sec
+I (865538) IMU: Ignoring impacts while BLE IMU TX is busy
+I (869138) SWING: Swing event sent over BLE
+I (869138) IMU: BLE IMU TX finished, impact detection enabled again
+I (869138) SWING: BLE queueing finished
+I (869140) SWING: Packets queued: 200
+I (869144) SWING: Queue drops: 0
+I (869146) SWING: Queueing time: 3.601 sec
+I (869150) SWING: Queue rate: 55.5 packets/sec
+I (869154) SWING: Estimated queue throughput: 5.21 kB/s
+I (869159) SWING: Packet size: 96 bytes
+I (869163) SWING: Total queued data: 18.75 kB
+I (869167) SWING: ACC overflow count: 0
+I (869171) SWING: GYRO overflow count: 0
+I (870913) SWING: BACKSWING (gz=11.4)
+I (871463) SWING: FORWARD at zero-cross (peak_gz=37.2 gz_now=-1.9)
+I (872468) SWING: RESET from FORWARD timeout
+I (876048) SWING: ADDRESS detected
+I (876713) SWING: BACKSWING (gz=10.9)
+I (877243) SWING: FORWARD at zero-cross (peak_gz=45.9 gz_now=-2.0)
+W (877723) IMPACT_LATENCY: impact_idx=806 detect_idx=806 sample_delay=0 sample_delay_ms=0.0 impact_us=877429564 detect_sample_us=877429564 detect_us=877429570 software_latency_ms=0.006 total_latency_ms=0.006
+W (877730) IMPACT_DEBUG: IMPACT! E=131.37 dE=74.36
+W (877735) IMPACT_NOTIFY: impact_to_notify_ms=11.85
+W (877739) CAPTURE_START: impact_to_capture_start_ms=16.446
+I (877747) SWING: Impact event started
+I (878363) SWING: SWING END
+I (879713) SWING: ADDRESS detected
+I (879752) SWING: Processing swing event
+I (879753) IMU: Ignoring impacts while BLE IMU TX is busy
+I (879773) IMU: BLE IMU TX finished, impact detection enabled again
+I (879972) SWING: Pre duration:  3.000 sec
+I (879972) SWING: Post duration: 1.995 sec
+I (879972) SWING: Total duration: 4.995 sec
+I (879973) IMU: Ignoring impacts while BLE IMU TX is busy
+I (883573) SWING: Swing event sent over BLE
+I (883573) IMU: BLE IMU TX finished, impact detection enabled again
+I (883573) SWING: BLE queueing finished
+I (883575) SWING: Packets queued: 200
+I (883579) SWING: Queue drops: 0
+I (883581) SWING: Queueing time: 3.601 sec
+I (883585) SWING: Queue rate: 55.5 packets/sec
+I (883589) SWING: Estimated queue throughput: 5.21 kB/s
+I (883594) SWING: Packet size: 96 bytes
+I (883598) SWING: Total queued data: 18.75 kB
+I (883602) SWING: ACC overflow count: 0
+I (883606) SWING: GYRO overflow count: 0
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

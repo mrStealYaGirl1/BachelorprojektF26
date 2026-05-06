@@ -1,0 +1,9 @@
+,variation_percent
+impact_to_notify_ms,5.387961274028348
+impact_to_capture_start_ms,4.431135301377893
+enqueue_duration_ms,0.03187708778321563
+queueing_time_ms,0.02777713478854656
+ble_send_after_enqueue_ms,0.030256440574011466
+packets_queued,0.0
+queue_rate_pkt_sec,0.17988307600060213
+throughput_kB_sec,0.0
