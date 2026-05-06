@@ -117,8 +117,8 @@ import { BleManager, Device, Subscription } from 'react-native-ble-plx'
 
 export const bleManager = new BleManager()
 
-// Din service UUID (samme som i nRF kode)
-const SERVICE_UUID = "0000fff0-0000-1000-8000-00805f9b34fb"
+export const SERVICE_UUID = "0000fff0-0000-1000-8000-00805f9b34fb"
+export const TX_CHARACTERISTIC_UUID = "0000fff1-0000-1000-8000-00805f9b34fb"
 
 export async function scanOnce(): Promise<Device> {
   return new Promise((resolve, reject) => {
@@ -192,12 +192,47 @@ export async function waitForPoweredOn(timeoutMs = 10000): Promise<void> {
 }
 
 export async function connectAndPrepare(device: Device): Promise<Device> {
-  console.log("Connecting to:", device.id)
+  console.log("BLE connect attempt:", {
+    id: device.id,
+    name: device.name,
+    localName: device.localName,
+    serviceUUIDs: device.serviceUUIDs,
+  })
 
-  const connected = await device.connect({ timeout: 10000 })
+  try {
+    const alreadyConnected = await bleManager.isDeviceConnected(device.id)
 
-  console.log("Discovering services...")
-  return connected.discoverAllServicesAndCharacteristics()
+    if (alreadyConnected) {
+      console.log("Device already connected, cancelling old connection first")
+      await bleManager.cancelDeviceConnection(device.id)
+    }
+
+    console.log("Connecting to:", device.id)
+
+    const connected = await bleManager.connectToDevice(device.id, {
+      timeout: 10000,
+      autoConnect: false,
+    })
+
+    console.log("Connected:", connected.id)
+
+    try {
+      await connected.requestMTU(247)
+      console.log("MTU request done/skipped")
+    } catch (mtuError) {
+      console.log("MTU request failed:", mtuError)
+    }
+
+    console.log("Discovering services...")
+    const discovered = await connected.discoverAllServicesAndCharacteristics()
+
+    console.log("Discovery done")
+
+    return discovered
+  } catch (error) {
+    console.log("BLE connectAndPrepare failed:", JSON.stringify(error, null, 2))
+    throw error
+  }
 }
 
 export function monitorCharacteristic(
@@ -258,3 +293,29 @@ export async function disconnectIfConnected(deviceId: string): Promise<void> {
     await bleManager.cancelDeviceConnection(deviceId)
   }
 }
+
+export async function logServicesAndCharacteristics(deviceId: string): Promise<void> {
+  const services = await bleManager.servicesForDevice(deviceId)
+
+  for (const service of services) {
+    console.log("SERVICE:", service.uuid)
+
+    const characteristics = await bleManager.characteristicsForDevice(
+      deviceId,
+      service.uuid
+    )
+
+    for (const characteristic of characteristics) {
+      console.log("  CHAR:", {
+        uuid: characteristic.uuid,
+        isReadable: characteristic.isReadable,
+        isWritableWithResponse: characteristic.isWritableWithResponse,
+        isWritableWithoutResponse: characteristic.isWritableWithoutResponse,
+        isNotifiable: characteristic.isNotifiable,
+        isIndicatable: characteristic.isIndicatable,
+      })
+    }
+  }
+}
+
+

@@ -1195,7 +1195,7 @@ const styles = StyleSheet.create({
     borderColor: '#5f8457',
   },
   compareCheckboxBoxUnselected: {
-    backgroundColor: 'transparent',
+    backgroundColor: '#ffffff',
     borderWidth: 1,
     borderColor: '#c9c9c9',
   },

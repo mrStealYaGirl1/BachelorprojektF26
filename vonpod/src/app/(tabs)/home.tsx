@@ -21,6 +21,7 @@ import {
   connectAndPrepare,
   disconnectIfConnected,
   findServiceForCharacteristic,
+  logServicesAndCharacteristics,
   monitorCharacteristic,
   waitForPoweredOn,
 } from '../../lib/ble'
@@ -41,7 +42,7 @@ import { useAuth } from '../../providers/AuthProvider'
 import { useFocusEffect } from '@react-navigation/native'
 import { fetchOwnProfile, type ProfileRow } from '../../lib/profile'
 
-const GOLF_IMU_CHARACTERISTIC_UUID = '99887766-5544-3322-1100-ffeeddccbbaa'
+const GOLF_IMU_CHARACTERISTIC_UUID = '0000fff1-0000-1000-8000-00805f9b34fb'
 const DEFAULT_EVENT_SAMPLE_COUNT = 1000
 const CAN_RENDER_BLUR = Boolean((NativeModulesProxy as Record<string, unknown>).ExpoBlurView)
 const ENABLE_SCAN_PREVIEW_MOCK = true
@@ -405,18 +406,25 @@ const HomeScreen = () => {
 
     try {
       const connectedDevice = await connectAndPrepare(foundDevice)
+
+      await logServicesAndCharacteristics(connectedDevice.id)
+      
       setDevice(connectedDevice)
       setSelectedDeviceLabel(targetName)
+      setStatus(`Forbundet til ${connectedDevice.name ?? connectedDevice.localName ?? 'GOLF_IMU'}`)
+      setIsConnectModalVisible(false)
 
+      /*
       const serviceUuid = await findServiceForCharacteristic(
         connectedDevice.id,
         GOLF_IMU_CHARACTERISTIC_UUID
-      )
+      )*/
 
       subscriptionRef.current?.remove()
       subscriptionRef.current = monitorCharacteristic(
         connectedDevice.id,
-        serviceUuid,
+        //serviceUuid,
+        GOLF_IMU_SERVICE_UUID,
         GOLF_IMU_CHARACTERISTIC_UUID,
         (value) => {
           setLastSample(value)
@@ -466,8 +474,6 @@ const HomeScreen = () => {
         }
       )
 
-      setStatus(`Forbundet til ${connectedDevice.name ?? connectedDevice.localName ?? 'GOLF_IMU'}`)
-      setIsConnectModalVisible(false)
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Ukendt BLE-fejl'
       setErrorText(message)
