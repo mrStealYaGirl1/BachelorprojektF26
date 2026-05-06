@@ -51,3 +51,12 @@ export async function updateStoredTrainingSession(
   await saveStoredTrainingSessions(nextSessions)
   return nextSessions
 }
+
+export async function deleteStoredTrainingSession(
+  sessionId: string
+): Promise<StoredTrainingSession[]> {
+  const sessions = await loadStoredTrainingSessions()
+  const nextSessions = sessions.filter((session) => session.id !== sessionId)
+  await saveStoredTrainingSessions(nextSessions)
+  return nextSessions
+}

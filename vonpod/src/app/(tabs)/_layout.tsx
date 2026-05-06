@@ -1,8 +1,7 @@
-import { Redirect, Tabs } from "expo-router";
-import { ActivityIndicator, View, Text, Dimensions, Alert, Pressable } from "react-native";
+import { Redirect, Tabs, usePathname, useRouter } from "expo-router";
+import { ActivityIndicator, View, Text, Dimensions, Alert, Pressable, Animated, Easing } from "react-native";
 import React from "react";
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useRouter } from 'expo-router';
 import { useAuth } from "../../providers/AuthProvider";
 import { useTraining } from '../../providers/TrainingProvider';
 
@@ -12,28 +11,26 @@ const { width } = Dimensions.get("window");
 export default function TabsLayout() {
   const { session, loading } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
   const { isTraining, startTraining, stopTraining } = useTraining();
 
-  const handleTrainingButtonPress = async () => {
-    try {
-      if (!isTraining) {
-        await startTraining();
-        router.push('/start-training');
-        return;
-      }
+  const isOnStartTrainingScreen =
+    pathname.endsWith('/start-training') || pathname.endsWith('/(tabs)/start-training');
 
-      router.push('/start-training');
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Kunne ikke opdatere traeningsstatus';
-      Alert.alert('Fejl', message);
-    }
-  };
+  const fade = React.useRef(new Animated.Value(0)).current
 
-  const handleTrainingButtonLongPress = async () => {
-    if (!isTraining) {
-      return;
-    }
+  React.useEffect(() => {
+    // show a quick semi-opaque overlay then fade it out for a soft transition
+    fade.setValue(0.6)
+    Animated.timing(fade, {
+      toValue: 0,
+      duration: 200,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start()
+  }, [pathname, fade])
 
+  const confirmStopTraining = () => {
     Alert.alert('Stop traening?', 'Hold op med at registrere denne session?', [
       {
         text: 'Annuller',
@@ -56,6 +53,34 @@ export default function TabsLayout() {
     ]);
   };
 
+  const handleTrainingButtonPress = async () => {
+    try {
+      if (!isTraining) {
+        await startTraining();
+        router.push('/start-training');
+        return;
+      }
+
+      if (isOnStartTrainingScreen) {
+        confirmStopTraining();
+        return;
+      }
+
+      router.push('/start-training');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Kunne ikke opdatere traeningsstatus';
+      Alert.alert('Fejl', message);
+    }
+  };
+
+  const handleTrainingButtonLongPress = async () => {
+    if (!isTraining) {
+      return;
+    }
+
+    confirmStopTraining();
+  };
+
   if (loading) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
@@ -69,7 +94,8 @@ export default function TabsLayout() {
   }
   
   return (
-    <Tabs screenOptions={{
+    <View style={{ flex: 1, position: 'relative' }}>
+      <Tabs screenOptions={{
       headerShown: false,
       tabBarShowLabel: false,
       tabBarStyle: {
@@ -228,8 +254,25 @@ export default function TabsLayout() {
         options={{
           href: null,
           headerShown: false,
+          animation: 'none',
         }}
         />
-    </Tabs>
+      </Tabs>
+
+      {/* overlay used to create a minimal soft transition when tabs change */}
+      <Animated.View
+        pointerEvents="none"
+        style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          top: 0,
+          // leave more space at the bottom so the large center button is not overlapped
+          bottom: 140,
+          backgroundColor: '#fff',
+          opacity: fade,
+        }}
+      />
+    </View>
   );
 }
