@@ -1,47 +1,47 @@
-// #include <stdio.h>
-// #include "freertos/FreeRTOS.h"
-// #include "freertos/task.h"
-// #include "esp_log.h"
+#include <stdio.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "esp_log.h"
 
-// #include "imu.h"
-// #include "swing_manager.h"
-// #include "ble_manager.h"
+#include "imu.h"
+#include "swing_manager.h"
+#include "ble_manager.h"
 
-// static const char *TAG = "MAIN";
+static const char *TAG = "MAIN";
 
-// void app_main(void)
-// {
-//     ESP_LOGI(TAG, "ESP32-FW starter");
+void app_main(void)
+{
+    ESP_LOGI(TAG, "ESP32-FW starter");
 
-//     ble_manager_init();     // starter NimBLE + advertising (connectable)
-//     ble_manager_start_tx_task(); // starter intern task + queue til at sende IMU data via BLE
+    ble_manager_init();     // starter NimBLE + advertising (connectable)
+    ble_manager_start_tx_task(); // starter intern task + queue til at sende IMU data via BLE
     
-//     imu_init();             // starter IMU + swing detection
+    imu_init();             // starter IMU + swing detection
 
-//     xTaskCreate(
-//         imu_task,
-//         "imu_task",
-//         4096,
-//         NULL,
-//         5,
-//         NULL
-//     );
+    xTaskCreate(
+        imu_task,
+        "imu_task",
+        4096,
+        NULL,
+        5,
+        NULL
+    );
 
-//     xTaskCreate(
-//         swing_manager_task,
-//         "swing_task",
-//         4096,
-//         NULL,
-//         5,
-//         NULL
-//     );
+    xTaskCreate(
+        swing_manager_task,
+        "swing_task",
+        4096,
+        NULL,
+        5,
+        NULL
+    );
 
-//     while (1)
-//     {
-//         //ESP_LOGI(TAG, "System kører");
-//         vTaskDelay(pdMS_TO_TICKS(1000));
-//     }
-// }
+    while (1)
+    {
+        //ESP_LOGI(TAG, "System kører");
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
 
 
 // /******************************************************************************************************/
@@ -75,35 +75,35 @@
 
 
 
-/******************************************************************************************************/
-/* test main - for analyzing IMU-data for drifting/drift */
-/******************************************************************************************************/
-#include <stdio.h>
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "esp_log.h"
+// /******************************************************************************************************/
+// /* test main - for analyzing IMU-data for drifting/drift */
+// /******************************************************************************************************/
+// #include <stdio.h>
+// #include "freertos/FreeRTOS.h"
+// #include "freertos/task.h"
+// #include "esp_log.h"
 
-#include "imu.h"
+// #include "imu.h"
 
-static const char *TAG = "MAIN";
+// static const char *TAG = "MAIN";
 
-// Hvis denne skal bruges - husk at fjerne ESP_LOGI'er i imu_init og imu_calibrate for at undgå at forstyrre CSV output
+// // Hvis denne skal bruges - husk at fjerne ESP_LOGI'er i imu_init og imu_calibrate for at undgå at forstyrre CSV output
 
-void app_main(void)
-{
-    ESP_LOGI(TAG, "Starter IMU drift-test");
+// void app_main(void)
+// {
+//     ESP_LOGI(TAG, "Starter IMU drift-test");
 
-    imu_init();
+//     imu_init();
 
-    xTaskCreate(
-        imu_csv_logger_task,
-        "imu_csv_logger_task",
-        4096,
-        NULL,
-        5,
-        NULL
-    );
-}
+//     xTaskCreate(
+//         imu_csv_logger_task,
+//         "imu_csv_logger_task",
+//         4096,
+//         NULL,
+//         5,
+//         NULL
+//     );
+// }
 
 
 

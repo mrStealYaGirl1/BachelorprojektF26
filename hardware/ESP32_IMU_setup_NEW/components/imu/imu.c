@@ -217,7 +217,7 @@ static void spi_init_bus(void)
 
 void imu_init(void)
 {
-    //ESP_LOGI(TAG, "Initializing BMI270...");
+    ESP_LOGI(TAG, "Initializing BMI270...");
 
     spi_init_bus();
     vTaskDelay(pdMS_TO_TICKS(100));
@@ -230,7 +230,7 @@ void imu_init(void)
 
     if (bmi270_init(&s_bmi) != BMI2_OK)
     {
-        //ESP_LOGE(TAG, "BMI270 init failed");
+        ESP_LOGE(TAG, "BMI270 init failed");
         return;
     }
 
@@ -254,7 +254,7 @@ void imu_init(void)
     imu_ringbuffer_init();
     imu_calibrate();
 
-    //ESP_LOGI(TAG, "IMU ready");
+    ESP_LOGI(TAG, "IMU ready");
 }
 
 /* =====================================================
@@ -269,7 +269,7 @@ static void imu_calibrate(void)
     float sum_ax = 0, sum_ay = 0, sum_az = 0;
     float sum_gx = 0, sum_gy = 0, sum_gz = 0;
 
-    //ESP_LOGI(TAG, "Calibrating IMU... Keep it still!");
+    ESP_LOGI(TAG, "Calibrating IMU... Keep it still!");
 
     for (int i = 0; i < samples; i++)
     {
@@ -303,7 +303,7 @@ static void imu_calibrate(void)
     gyro_bias_y = sum_gy / samples;
     gyro_bias_z = sum_gz / samples;
 
-    //ESP_LOGI(TAG, "Calibration done");
+    ESP_LOGI(TAG, "Calibration done");
 }
 
 
@@ -740,9 +740,45 @@ static uint8_t detect_swing(float acc_dynamic,
 
             if (energy_sum > IMPACT_THRESHOLD && dE > IMPACT_RISE_THRESHOLD && gz_dps < IMPACT_FORWARD_GZ_MIN_DPS)
             {
-                current_swing.impact_idx = forward_peak_idx;
-                current_swing.impact_us = imu_rb.buffer[forward_peak_idx].timestamp_us;
-                
+                int64_t detect_us = esp_timer_get_time();
+
+    uint32_t impact_idx = forward_peak_idx;
+    uint32_t detect_idx = sample_idx;
+
+    int64_t impact_us = imu_rb.buffer[impact_idx].timestamp_us;
+    int64_t detect_sample_us = imu_rb.buffer[detect_idx].timestamp_us;
+
+    uint32_t sample_delay =
+        (detect_idx >= impact_idx)
+        ? (detect_idx - impact_idx)
+        : (detect_idx + IMU_BUFFER_SIZE - impact_idx);
+
+    float sample_delay_ms = sample_delay * 5.0f; // 200 Hz = 5 ms/sample
+
+                int64_t software_latency_us = detect_us - detect_sample_us;
+                int64_t total_latency_us = detect_us - impact_us;
+
+                current_swing.impact_idx = impact_idx;
+                current_swing.impact_us = impact_us;
+
+                current_swing.follow_start_idx = detect_idx;
+                current_swing.follow_start_us = detect_sample_us;
+
+                ESP_LOGW("IMPACT_LATENCY",
+                        "impact_idx=%lu detect_idx=%lu sample_delay=%lu sample_delay_ms=%.1f "
+                        "impact_us=%lld detect_sample_us=%lld detect_us=%lld "
+                        "software_latency_ms=%.3f total_latency_ms=%.3f",
+                        impact_idx,
+                        detect_idx,
+                        sample_delay,
+                        sample_delay_ms,
+                        impact_us,
+                        detect_sample_us,
+                        detect_us,
+                        software_latency_us / 1000.0f,
+                        total_latency_us / 1000.0f);
+
+
                 ESP_LOGW("IMPACT_DEBUG", "IMPACT! E=%.2f dE=%.2f", energy_sum, dE);
 
                 cooldown_counter = IMPACT_COOLDOWN_SAMPLES;
@@ -934,7 +970,15 @@ void imu_task(void *pvParameters)
 
                 if (detect_swing(acc_dynamic, last_gyro_mag_dps, gx_dps, gy_dps, gz_dps, sample_idx))
                 {
-                    swing_manager_notify_impact(current_swing.impact_idx);
+                    int64_t notify_us = esp_timer_get_time();
+
+                    ESP_LOGW("IMPACT_NOTIFY",
+                            "impact_to_notify_ms=%.2f",
+                            (notify_us - current_swing.impact_us) / 1000.0f);
+
+                    swing_manager_notify_impact(current_swing.impact_idx, current_swing.impact_us);                    
+                    
+                    //swing_manager_notify_impact(current_swing.impact_idx);
                 }
             }
 

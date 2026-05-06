@@ -33,13 +33,34 @@ static uint8_t impact_pending = 0;
 static swing_timing_t current_event_timing;
 static uint8_t current_event_timing_valid = 0;
 
-void swing_manager_notify_impact(uint32_t index)
+// void swing_manager_notify_impact(uint32_t index)
+// {
+//     int64_t capture_start_us = esp_timer_get_time();
+
+//     ESP_LOGW("CAPTURE_START",
+//              "impact_to_capture_start_ms=%.3f",
+//              (capture_start_us - current_event_timing.impact_us) / 1000.0f);
+
+//     if (state == STATE_WAIT)
+//     {
+//         impact_index = index;
+//         impact_pending = 1;
+//     }
+// }
+
+void swing_manager_notify_impact(uint32_t index, int64_t impact_us)
 {
+    int64_t now_us = esp_timer_get_time();
+
+    ESP_LOGW("CAPTURE_START",
+             "impact_to_capture_start_ms=%.3f",
+             (now_us - impact_us) / 1000.0f);
+
     if (state == STATE_WAIT)
-    {
-        impact_index = index;
-        impact_pending = 1;
-    }
+        {
+            impact_index = index;
+            impact_pending = 1;
+        }
 }
 
 void swing_manager_add_swing(swing_timing_t swing)
