@@ -8,7 +8,12 @@ target_sources(app PRIVATE
 
     src/drivers/spi/spi_driver.c
     src/drivers/imu/imu_driver.c
+    src/drivers/imu/imu_processing.c
 
     src/drivers/bmi270/bmi2.c
     src/drivers/bmi270/bmi270.c
+
+    src/drivers/swing_manager/swing_manager.c
+
+    src/drivers/ble/ble_driver.c
 )

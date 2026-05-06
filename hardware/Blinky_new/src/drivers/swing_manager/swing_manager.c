@@ -1,6 +1,6 @@
 #include "swing_manager.h"
-#include "imu/imu_driver.h"
-#include "ble/ble_driver.h"
+#include "../imu/imu_driver.h"
+#include "../ble/ble_driver.h"
 
 #include <zephyr/kernel.h>
 #include <zephyr/sys/printk.h>

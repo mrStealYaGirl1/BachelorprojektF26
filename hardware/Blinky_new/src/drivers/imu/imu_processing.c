@@ -1,7 +1,7 @@
 // imu_processing.c - upgraded version
 
 #include "imu_processing.h"
-#include "swing_manager/swing_manager.h"
+#include "../swing_manager/swing_manager.h"
 
 #include <zephyr/kernel.h>
 #include <zephyr/sys/printk.h>

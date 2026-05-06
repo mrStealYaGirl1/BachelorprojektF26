@@ -17,7 +17,7 @@
 /* ---------------------------------
    SAMPLE STRUCT (uændret)
 --------------------------------- */
-typedef struct __packed
+typedef struct __attribute__((packed))
 {
     int16_t ax;
     int16_t ay;
@@ -35,7 +35,7 @@ typedef struct __packed
 /* ---------------------------------
    PACKET STRUCT (RETTET)
 --------------------------------- */
-typedef struct __packed
+typedef struct __attribute__((packed))
 {
     uint16_t event_id;
     uint16_t packet_type;

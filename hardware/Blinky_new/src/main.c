@@ -1,17 +1,23 @@
 #include <zephyr/kernel.h>
 #include <zephyr/drivers/gpio.h>
-#include <SEGGER_RTT.h>
 #include <zephyr/sys/printk.h>
+#include <SEGGER_RTT.h>
 
 #include "drivers/imu/imu_driver.h"
+#include "drivers/ble/ble_driver.h"
 
 #define LED_NODE DT_NODELABEL(gpio1)
 #define LED_PIN 12
 
+#define IMU_STACK_SIZE 4096
+#define IMU_PRIORITY   5
+
+K_THREAD_STACK_DEFINE(imu_stack, IMU_STACK_SIZE);
+static struct k_thread imu_thread_data;
+
 int main(void)
 {
     const struct device *gpio1 = DEVICE_DT_GET(LED_NODE);
-    imu_sample_t sample;
 
     SEGGER_RTT_WriteString(0, "BOOT\r\n");
 
@@ -19,30 +25,94 @@ int main(void)
         gpio_pin_configure(gpio1, LED_PIN, GPIO_OUTPUT_INACTIVE);
     }
 
-    SEGGER_RTT_WriteString(0, "Before IMU init\r\n");
-
     if (imu_init() != 0) {
-        SEGGER_RTT_WriteString(0, "IMU init failed\r\n");
-        while (1) {
-            gpio_pin_toggle(gpio1, LED_PIN);
-            k_sleep(K_MSEC(200));
-        }
+        printk("IMU init failed\n");
+        return 0;
     }
 
-    SEGGER_RTT_WriteString(0, "IMU init OK\r\n");
+    imu_ringbuffer_init();
 
-    while (1) {
-        imu_get_latest(&sample);
+    k_thread_create(&imu_thread_data,
+                    imu_stack,
+                    IMU_STACK_SIZE,
+                    imu_thread,
+                    NULL, NULL, NULL,
+                    IMU_PRIORITY,
+                    0,
+                    K_NO_WAIT);
 
-        printk("ACC: %d %d %d | GYRO: %d %d %d | t=%llu\n",
-               sample.ax, sample.ay, sample.az,
-               sample.gx, sample.gy, sample.gz,
-               sample.timestamp_ms);
+    printk("IMU thread started\n");
 
-        gpio_pin_toggle(gpio1, LED_PIN);
+
+    printk("Before BLE init\n");
+
+    ble_init();
+
+    while (!ble_is_stack_ready()) {
+        printk("Waiting for BLE ready...\n");
         k_sleep(K_MSEC(100));
     }
+
+    printk("BLE stack ready\n");
+
+    ble_post_init();
+
+    printk("BLE advertising started\n");
+
+    while (1) {
+        gpio_pin_toggle(gpio1, LED_PIN);
+        printk("main alive\n");
+        k_sleep(K_SECONDS(1));
+    }
 }
+
+
+// IMU-læsning live virker
+// #include <zephyr/kernel.h>
+// #include <zephyr/drivers/gpio.h>
+// #include <SEGGER_RTT.h>
+// #include <zephyr/sys/printk.h>
+
+// #include "drivers/imu/imu_driver.h"
+
+// #define LED_NODE DT_NODELABEL(gpio1)
+// #define LED_PIN 12
+
+// int main(void)
+// {
+//     const struct device *gpio1 = DEVICE_DT_GET(LED_NODE);
+//     imu_sample_t sample;
+
+//     SEGGER_RTT_WriteString(0, "BOOT\r\n");
+
+//     if (device_is_ready(gpio1)) {
+//         gpio_pin_configure(gpio1, LED_PIN, GPIO_OUTPUT_INACTIVE);
+//     }
+
+//     SEGGER_RTT_WriteString(0, "Before IMU init\r\n");
+
+//     if (imu_init() != 0) {
+//         SEGGER_RTT_WriteString(0, "IMU init failed\r\n");
+//         while (1) {
+//             gpio_pin_toggle(gpio1, LED_PIN);
+//             k_sleep(K_MSEC(200));
+//         }
+//     }
+
+//     SEGGER_RTT_WriteString(0, "IMU init OK\r\n");
+
+//     while (1) {
+//         imu_get_latest(&sample);
+
+//         printk("ACC: %d %d %d | GYRO: %d %d %d | t=%llu\n",
+//                sample.ax, sample.ay, sample.az,
+//                sample.gx, sample.gy, sample.gz,
+//                sample.timestamp_ms);
+
+//         gpio_pin_toggle(gpio1, LED_PIN);
+//         k_sleep(K_MSEC(100));
+//     }
+// }
 
 
 // SPI OK
