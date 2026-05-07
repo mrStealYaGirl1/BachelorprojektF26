@@ -42,10 +42,14 @@ static struct k_work ble_work;
 static const struct bt_gatt_attr *notify_attr;
 static struct bt_gatt_exchange_params mtu_exchange_params;
 
+static struct k_work_delayable adv_restart_work;
+
 static volatile bool ble_tx_busy = false;
 
 /* forward declaration */
 static void ble_notify_work(struct k_work *work);
+static void adv_restart_handler(struct k_work *work);
+
 
 static void notify_cb(struct bt_conn *conn, void *user_data)
 {
@@ -75,6 +79,36 @@ static void ccc_cfg_changed(const struct bt_gatt_attr *attr, uint16_t value)
     printk("CCC CHANGED: %d\n", notify_enabled);
 }
 
+
+/* =========================
+   Advertising start (kan kaldes fra flere steder)
+========================= */
+
+static int start_advertising(void)
+{
+    static const struct bt_le_adv_param adv_param = {
+        .options = BT_LE_ADV_OPT_CONN,
+        .interval_min = BT_GAP_ADV_FAST_INT_MIN_2,
+        .interval_max = BT_GAP_ADV_FAST_INT_MAX_2,
+    };
+
+    const struct bt_data ad[] = {
+        BT_DATA_BYTES(BT_DATA_FLAGS,
+            (BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR)),
+
+        BT_DATA(BT_DATA_NAME_COMPLETE,
+            STRINGIFY(CONFIG_BT_DEVICE_NAME),
+            strlen(STRINGIFY(CONFIG_BT_DEVICE_NAME))),
+
+        BT_DATA_BYTES(BT_DATA_UUID16_ALL, 0xF0, 0xFF)
+    };
+
+    return bt_le_adv_start(&adv_param,
+                           ad, ARRAY_SIZE(ad),
+                           NULL, 0);
+}
+
+
 static void connected(struct bt_conn *conn, uint8_t err)
 {
     if (err) {
@@ -91,12 +125,12 @@ static void connected(struct bt_conn *conn, uint8_t err)
     current_conn = bt_conn_ref(conn);
 
     notify_enabled = false;
-    att_ready = false;
+    att_ready = true;   // midlertidigt uden MTU exchange
 
-    mtu_exchange_params.func = mtu_exchange_cb;
+    // mtu_exchange_params.func = mtu_exchange_cb;
 
-    int ret = bt_gatt_exchange_mtu(conn, &mtu_exchange_params);
-    printk("bt_gatt_exchange_mtu() returned: %d\n", ret);
+    // int ret = bt_gatt_exchange_mtu(conn, &mtu_exchange_params);
+    // printk("bt_gatt_exchange_mtu() returned: %d\n", ret);
 }
 
 
@@ -111,6 +145,8 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
 
     notify_enabled = false;
     att_ready = false;
+
+    k_work_schedule(&adv_restart_work, K_MSEC(500));
 }
 
 BT_CONN_CB_DEFINE(conn_callbacks) = {
@@ -190,19 +226,51 @@ static void ble_notify_work(struct k_work *work)
    GATT SERVICE
 ========================= */
 
+static uint8_t dummy_value = 0;
+
+static ssize_t read_dummy(struct bt_conn *conn,
+                          const struct bt_gatt_attr *attr,
+                          void *buf,
+                          uint16_t len,
+                          uint16_t offset)
+{
+    return bt_gatt_attr_read(conn, attr, buf, len, offset,
+                             &dummy_value, sizeof(dummy_value));
+}
+
 BT_GATT_SERVICE_DEFINE(test_svc,
     BT_GATT_PRIMARY_SERVICE(BT_UUID_DECLARE_16(0xFFF0)),
 
     BT_GATT_CHARACTERISTIC(
         BT_UUID_DECLARE_16(0xFFF1),
-        BT_GATT_CHRC_NOTIFY,
-        BT_GATT_PERM_NONE,
-        NULL, NULL, NULL
+        BT_GATT_CHRC_READ | BT_GATT_CHRC_NOTIFY,
+        BT_GATT_PERM_READ,
+        read_dummy, NULL, &dummy_value
     ),
 
     BT_GATT_CCC(ccc_cfg_changed,
         BT_GATT_PERM_READ | BT_GATT_PERM_WRITE),
 );
+
+// BT_GATT_SERVICE_DEFINE(test_svc,
+//     BT_GATT_PRIMARY_SERVICE(BT_UUID_DECLARE_16(0xFFF0)),
+
+//     // BT_GATT_CHARACTERISTIC(
+//     //     BT_UUID_DECLARE_16(0xFFF1),
+//     //     BT_GATT_CHRC_NOTIFY,
+//     //     BT_GATT_PERM_NONE,
+//     //     NULL, NULL, NULL
+//     // ),
+//     BT_GATT_CHARACTERISTIC(
+//         BT_UUID_DECLARE_16(0xFFF1),
+//         BT_GATT_CHRC_NOTIFY | BT_GATT_CHRC_READ,
+//         BT_GATT_PERM_READ,
+//         read_dummy, NULL, NULL
+//     ),
+
+//     BT_GATT_CCC(ccc_cfg_changed,
+//         BT_GATT_PERM_READ | BT_GATT_PERM_WRITE),
+// );
 
 
 /* =========================
@@ -220,33 +288,17 @@ static void bt_ready_cb(int err)
     ble_stack_ready = true;
 }
 
+
 void ble_post_init(void)
 {
     notify_attr = &test_svc.attrs[2];
+
     k_work_init(&ble_work, ble_notify_work);
-    bt_gatt_cb_register(&gatt_callbacks);
+    k_work_init_delayable(&adv_restart_work, adv_restart_handler);
 
-    static const struct bt_le_adv_param adv_param = {
-        .options = BT_LE_ADV_OPT_CONN,
-        .interval_min = BT_GAP_ADV_FAST_INT_MIN_2,
-        .interval_max = BT_GAP_ADV_FAST_INT_MAX_2,
-    };
+    //bt_gatt_cb_register(&gatt_callbacks);
 
-
-    const struct bt_data ad[] = {
-        BT_DATA_BYTES(BT_DATA_FLAGS,
-            (BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR)),
-
-        BT_DATA(BT_DATA_NAME_COMPLETE,
-            STRINGIFY(CONFIG_BT_DEVICE_NAME),
-            strlen(STRINGIFY(CONFIG_BT_DEVICE_NAME))),
-
-        BT_DATA_BYTES(BT_DATA_UUID16_ALL, 0xF0, 0xFF)   // 0xFFF0 in little-endian
-    };
-
-    int err = bt_le_adv_start(&adv_param,
-                            ad, ARRAY_SIZE(ad),
-                            NULL, 0);
+    int err = start_advertising();
 
     if (err && err != -EALREADY) {
         printk("ADV START failed: %d\n", err);
@@ -387,4 +439,11 @@ void ble_send_imu_sample(const imu_sample_t *sample)
 bool ble_is_stack_ready(void)
 {
     return ble_stack_ready;
+}
+
+
+static void adv_restart_handler(struct k_work *work)
+{
+    int err = start_advertising();
+    printk("Advertising restart: %d\n", err);
 }

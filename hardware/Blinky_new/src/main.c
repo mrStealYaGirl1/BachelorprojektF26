@@ -3,17 +3,10 @@
 #include <zephyr/sys/printk.h>
 #include <SEGGER_RTT.h>
 
-#include "drivers/imu/imu_driver.h"
 #include "drivers/ble/ble_driver.h"
 
 #define LED_NODE DT_NODELABEL(gpio1)
 #define LED_PIN 12
-
-#define IMU_STACK_SIZE 4096
-#define IMU_PRIORITY   5
-
-K_THREAD_STACK_DEFINE(imu_stack, IMU_STACK_SIZE);
-static struct k_thread imu_thread_data;
 
 int main(void)
 {
@@ -24,25 +17,6 @@ int main(void)
     if (device_is_ready(gpio1)) {
         gpio_pin_configure(gpio1, LED_PIN, GPIO_OUTPUT_INACTIVE);
     }
-
-    if (imu_init() != 0) {
-        printk("IMU init failed\n");
-        return 0;
-    }
-
-    imu_ringbuffer_init();
-
-    k_thread_create(&imu_thread_data,
-                    imu_stack,
-                    IMU_STACK_SIZE,
-                    imu_thread,
-                    NULL, NULL, NULL,
-                    IMU_PRIORITY,
-                    0,
-                    K_NO_WAIT);
-
-    printk("IMU thread started\n");
-
 
     printk("Before BLE init\n");
 
@@ -61,10 +35,123 @@ int main(void)
 
     while (1) {
         gpio_pin_toggle(gpio1, LED_PIN);
-        printk("main alive\n");
+        //printk("main alive\n");
         k_sleep(K_SECONDS(1));
     }
 }
+
+
+// kan se device på nrf connect
+// #include <zephyr/kernel.h>
+// #include <zephyr/drivers/gpio.h>
+// #include <zephyr/sys/printk.h>
+// #include <SEGGER_RTT.h>
+
+// #include "drivers/ble/ble_driver.h"
+
+// #define LED_NODE DT_NODELABEL(gpio1)
+// #define LED_PIN 12
+
+// int main(void)
+// {
+//     const struct device *gpio1 = DEVICE_DT_GET(LED_NODE);
+
+//     SEGGER_RTT_WriteString(0, "BOOT\r\n");
+
+//     if (device_is_ready(gpio1)) {
+//         gpio_pin_configure(gpio1, LED_PIN, GPIO_OUTPUT_INACTIVE);
+//     }
+
+//     printk("Before BLE init\n");
+
+//     ble_init();
+
+//     while (!ble_is_stack_ready()) {
+//         printk("Waiting for BLE ready...\n");
+//         k_sleep(K_MSEC(100));
+//     }
+
+//     printk("BLE stack ready\n");
+
+//     ble_post_init();
+
+//     printk("BLE advertising started\n");
+
+//     while (1) {
+//         gpio_pin_toggle(gpio1, LED_PIN);
+//         printk("main alive\n");
+//         k_sleep(K_SECONDS(1));
+//     }
+// }
+
+
+// #include <zephyr/kernel.h>
+// #include <zephyr/drivers/gpio.h>
+// #include <zephyr/sys/printk.h>
+// #include <SEGGER_RTT.h>
+
+// #include "drivers/imu/imu_driver.h"
+// #include "drivers/ble/ble_driver.h"
+
+// #define LED_NODE DT_NODELABEL(gpio1)
+// #define LED_PIN 12
+
+// #define IMU_STACK_SIZE 4096
+// #define IMU_PRIORITY   5
+
+// K_THREAD_STACK_DEFINE(imu_stack, IMU_STACK_SIZE);
+// static struct k_thread imu_thread_data;
+
+// int main(void)
+// {
+//     const struct device *gpio1 = DEVICE_DT_GET(LED_NODE);
+
+//     SEGGER_RTT_WriteString(0, "BOOT\r\n");
+
+//     if (device_is_ready(gpio1)) {
+//         gpio_pin_configure(gpio1, LED_PIN, GPIO_OUTPUT_INACTIVE);
+//     }
+
+//     if (imu_init() != 0) {
+//         printk("IMU init failed\n");
+//         return 0;
+//     }
+
+//     imu_ringbuffer_init();
+
+//     k_thread_create(&imu_thread_data,
+//                     imu_stack,
+//                     IMU_STACK_SIZE,
+//                     imu_thread,
+//                     NULL, NULL, NULL,
+//                     IMU_PRIORITY,
+//                     0,
+//                     K_NO_WAIT);
+
+//     printk("IMU thread started\n");
+
+
+//     printk("Before BLE init\n");
+
+//     ble_init();
+
+//     while (!ble_is_stack_ready()) {
+//         printk("Waiting for BLE ready...\n");
+//         k_sleep(K_MSEC(100));
+//     }
+
+//     printk("BLE stack ready\n");
+
+//     ble_post_init();
+
+//     printk("BLE advertising started\n");
+
+//     while (1) {
+//         gpio_pin_toggle(gpio1, LED_PIN);
+//         printk("main alive\n");
+//         k_sleep(K_SECONDS(1));
+//     }
+// }
 
 
 // IMU-læsning live virker

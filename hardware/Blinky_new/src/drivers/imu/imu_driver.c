@@ -314,11 +314,11 @@ void imu_thread(void *p1, void *p2, void *p3)
         {
             print_counter = 0;
 
-            printk("ACC: %d %d %d | GYRO: %d %d %d\n",
-                sample.ax, sample.ay, sample.az,
-                sample.gx, sample.gy, sample.gz);
+            // printk("ACC: %d %d %d | GYRO: %d %d %d\n",
+            //     sample.ax, sample.ay, sample.az,
+            //     sample.gx, sample.gy, sample.gz);
         }
 
-        k_msleep(10); // Before 5 = 200HZ. 10 = 100HZ
+        k_msleep(50); // Before 5 = 200HZ. 10 = 100HZ
     }
 }
