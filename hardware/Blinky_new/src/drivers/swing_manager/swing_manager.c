@@ -23,11 +23,11 @@ static imu_sample_t swing_buffer[EVENT_SIZE];
 
 static uint32_t impact_index = 0;
 static uint32_t event_impact_index = 0;
-static uint32_t post_counter = 0;
 static uint8_t impact_pending = 0;
 
 static swing_timing_t current_event_timing;
 static uint8_t current_event_timing_valid = 0;
+
 
 
 void swing_manager_init(void)
@@ -36,31 +36,42 @@ void swing_manager_init(void)
 
     impact_index = 0;
     event_impact_index = 0;
-    post_counter = 0;
     impact_pending = 0;
-
     memset(&current_event_timing, 0, sizeof(current_event_timing));
     current_event_timing_valid = 0;
 }
 
+
 void swing_manager_notify_impact(uint32_t index, uint64_t impact_us)
 {
+    imu_ringbuffer_t *rb = imu_get_ringbuffer();
+
+    if (!rb->wrapped && index < PRE_SAMPLES)
+    {
+        printk("Ignoring impact: not enough pre-samples yet\n");
+        return;
+    }
+
     if (state == STATE_WAIT)
     {
         impact_index = index;
 
+        memset(&current_event_timing, 0, sizeof(current_event_timing));
         current_event_timing.impact_idx = index;
         current_event_timing.impact_us = impact_us;
+        current_event_timing_valid = 0;
 
-        current_event_timing_valid = 1;
         impact_pending = 1;
     }
 }
 
 void swing_manager_add_swing(swing_timing_t swing)
 {
-    current_event_timing = swing;
-    current_event_timing_valid = 1;
+    if (state == STATE_CAPTURE_POST || state == STATE_PROCESS)
+    {
+        current_event_timing = swing;
+        current_event_timing_valid = 1;
+    }
 }
 
 static void copy_event(void)
@@ -75,6 +86,16 @@ static void copy_event(void)
         uint32_t idx = (start + i) % IMU_BUFFER_SIZE;
         swing_buffer[i] = rb->buffer[idx];
     }
+}
+
+static uint32_t samples_after_impact(uint32_t current_write_index,
+                                     uint32_t impact_idx)
+{
+    if (current_write_index > impact_idx) {
+        return current_write_index - impact_idx - 1;
+    }
+
+    return (IMU_BUFFER_SIZE - impact_idx - 1) + current_write_index;
 }
 
 void swing_manager_thread(void *p1, void *p2, void *p3)
@@ -95,7 +116,6 @@ void swing_manager_thread(void *p1, void *p2, void *p3)
                     impact_pending = 0;
 
                     event_impact_index = impact_index;
-                    post_counter = 0;
 
                     state = STATE_CAPTURE_POST;
 
@@ -104,43 +124,50 @@ void swing_manager_thread(void *p1, void *p2, void *p3)
                 break;
 
             case STATE_CAPTURE_POST:
-                post_counter++;
+            {
+                imu_ringbuffer_t *rb = imu_get_ringbuffer();
 
-                if (post_counter >= POST_SAMPLES)
+                uint32_t post_samples_ready =
+                    samples_after_impact(rb->write_index, event_impact_index);
+
+                if (post_samples_ready >= POST_SAMPLES && current_event_timing_valid)
                 {
-                    post_counter = 0;
                     copy_event();
                     state = STATE_PROCESS;
                 }
+
                 break;
+            }
 
             case STATE_PROCESS:
             {
                 printk("Processing swing event...\n");
 
-                uint16_t event_id = ++event_id_counter;
+                
 
+                
+
+                if (!current_event_timing_valid)
+                {
+                    printk("ERROR: timing not ready, skipping event\n");
+                    state = STATE_COOLDOWN;
+                    break;
+                }
+
+                uint16_t event_id = ++event_id_counter;
                 ble_swing_meta_packet_t meta = {0};
 
                 meta.event_id = event_id;
                 meta.packet_type = BLE_PKT_TYPE_META;
 
-                if (current_event_timing_valid)
-                {
-                    meta.swing_id = current_event_timing.swing_id;
+                meta.swing_id = current_event_timing.swing_id;
 
-                    meta.address_start_us   = current_event_timing.address_start_us;
-                    meta.backswing_start_us = current_event_timing.backswing_start_us;
-                    meta.forward_start_us   = current_event_timing.forward_start_us;
-                    meta.impact_us          = current_event_timing.impact_us;
-                    meta.follow_start_us    = current_event_timing.follow_start_us;
-                    meta.end_us             = current_event_timing.end_us;
-                }
-                else
-                {
-                    meta.swing_id = event_id;
-                    meta.impact_us = swing_buffer[PRE_SAMPLES].timestamp_us;
-                }
+                meta.address_start_us   = current_event_timing.address_start_us;
+                meta.backswing_start_us = current_event_timing.backswing_start_us;
+                meta.forward_start_us   = current_event_timing.forward_start_us;
+                meta.impact_us          = current_event_timing.impact_us;
+                meta.follow_start_us    = current_event_timing.follow_start_us;
+                meta.end_us             = current_event_timing.end_us;
 
                 meta.sample_rate_hz = IMU_SAMPLE_RATE_HZ;
                 meta.total_samples = EVENT_SIZE;
@@ -151,6 +178,7 @@ void swing_manager_thread(void *p1, void *p2, void *p3)
 
                 meta.event_start_us = swing_buffer[0].timestamp_us;
                 meta.event_end_us   = swing_buffer[EVENT_SIZE - 1].timestamp_us;
+
 
                 printk("Sending meta packet...\n");
                 ble_queue_meta_packet(&meta);
@@ -181,7 +209,7 @@ void swing_manager_thread(void *p1, void *p2, void *p3)
                         pkt.samples[j].gy = swing_buffer[idx].gy;
                         pkt.samples[j].gz = swing_buffer[idx].gz;
 
-                        pkt.samples[j].ts_us = (uint32_t)swing_buffer[idx].timestamp_us;
+                        pkt.samples[j].ts_ms = (uint32_t)(swing_buffer[idx].timestamp_us / 1000ULL);
                         pkt.samples[j].seq = seq++;
 
                         pkt.sample_count++;

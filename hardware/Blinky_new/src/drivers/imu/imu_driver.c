@@ -199,7 +199,6 @@ int imu_init(void)
 {
     uint8_t chip_id;
 
-    // 🔥 INIT SPI FIRST
     if (spi_driver_init() != 0)
     {
         printk("SPI init failed\n");
@@ -210,7 +209,6 @@ int imu_init(void)
 
     k_msleep(10);
 
-    // Setup BMI interface
     s_bmi.read = bmi_spi_read;
     s_bmi.write = bmi_spi_write;
     s_bmi.delay_us = spi_delay;
@@ -222,7 +220,8 @@ int imu_init(void)
     uint8_t raw_chip_id = imu_read_chip_id();
     printk("Raw CHIP_ID before init: 0x%02X\n", raw_chip_id);
 
-    if (raw_chip_id != 0x24) {
+    if (raw_chip_id != 0x24)
+    {
         printk("BMI270 chip-id check failed before init\n");
         return -1;
     }
@@ -241,11 +240,49 @@ int imu_init(void)
     bmi2_get_regs(0x00, &chip_id, 1, &s_bmi);
     printk("CHIP_ID: 0x%02X\n", chip_id);
 
+    struct bmi2_sens_config config[2];
+
+    config[0].type = BMI2_ACCEL;
+    config[1].type = BMI2_GYRO;
+
+    rslt = bmi2_get_sensor_config(config, 2, &s_bmi);
+    printk("bmi2_get_sensor_config rslt = %d\n", rslt);
+
+    if (rslt != BMI2_OK)
+    {
+        printk("Sensor get config failed\n");
+        return -1;
+    }
+
+    /* ACC settings */
+    config[0].cfg.acc.odr = BMI2_ACC_ODR_200HZ;
+    config[0].cfg.acc.range = BMI2_ACC_RANGE_2G;   // gammel rå-skala: 1g ≈ 16384
+    config[0].cfg.acc.bwp = BMI2_ACC_NORMAL_AVG4;
+    config[0].cfg.acc.filter_perf = BMI2_PERF_OPT_MODE;
+
+    /* GYRO settings */
+    config[1].cfg.gyr.odr = BMI2_GYR_ODR_200HZ;
+    config[1].cfg.gyr.range = BMI2_GYR_RANGE_2000;
+    config[1].cfg.gyr.bwp = BMI2_GYR_NORMAL_MODE;
+    config[1].cfg.gyr.noise_perf = BMI2_PERF_OPT_MODE;
+    config[1].cfg.gyr.filter_perf = BMI2_PERF_OPT_MODE;
+
+    rslt = bmi2_set_sensor_config(config, 2, &s_bmi);
+    printk("bmi2_set_sensor_config rslt = %d\n", rslt);
+
+    if (rslt != BMI2_OK)
+    {
+        printk("Sensor config failed\n");
+        return -1;
+    }
+
     uint8_t sens_list[2] = { BMI2_ACCEL, BMI2_GYRO };
+
     rslt = bmi2_sensor_enable(sens_list, 2, &s_bmi);
     printk("bmi2_sensor_enable rslt = %d\n", rslt);
 
-    if (rslt != BMI2_OK) {
+    if (rslt != BMI2_OK)
+    {
         printk("Sensor enable failed\n");
         return -1;
     }
@@ -296,9 +333,14 @@ void imu_thread(void *p1, void *p2, void *p3)
     ARG_UNUSED(p3);
 
     imu_sample_t sample;
+    static int print_counter = 0;
+
+    int64_t next = k_uptime_get();
 
     while (1)
     {
+        next += 5;   // 5 ms = 200 Hz
+
         imu_read_raw(&sample);
 
         imu_ringbuffer_push(&sample);
@@ -309,8 +351,6 @@ void imu_thread(void *p1, void *p2, void *p3)
 
         imu_process_sample(&sample, idx);
 
-        static int print_counter = 0;
-
         if (++print_counter >= 100)
         {
             print_counter = 0;
@@ -320,6 +360,6 @@ void imu_thread(void *p1, void *p2, void *p3)
             //     sample.gx, sample.gy, sample.gz);
         }
 
-        k_msleep(5); // Before 5 = 200HZ. 10 = 100HZ
+        k_sleep(K_TIMEOUT_ABS_MS(next));
     }
 }

@@ -1,11 +1,9 @@
+# visualize_swing_imu_and_meta_data.py
+
 import sys
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-
-# =========================
-# INDSTILLINGER
-# =========================
 
 ACC_RANGE_G = 2.0
 GYRO_RANGE_DPS = 2000.0
@@ -16,19 +14,14 @@ ANGLE_AXIS = "gz"
 CROP_AFTER_IMPACT_SEC = 1.5
 ENABLE_CROP = False
 
-# =========================
-# KONVERTERING
-# =========================
 
 def raw_acc_to_g(raw):
     return raw * (ACC_RANGE_G / RAW_MAX)
 
+
 def raw_gyro_to_dps(raw):
     return raw * (GYRO_RANGE_DPS / RAW_MAX)
 
-# =========================
-# DUPLICATE FILTER
-# =========================
 
 def remove_duplicate_samples(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
@@ -47,53 +40,56 @@ def remove_duplicate_samples(df: pd.DataFrame) -> pd.DataFrame:
     df.reset_index(drop=True, inplace=True)
     return df
 
-# =========================
-# DATA PREP
-# =========================
 
 def prepare_data(df: pd.DataFrame, impact_us: int) -> pd.DataFrame:
     df = df.copy()
-
     df = df.sort_values("seq").reset_index(drop=True)
 
-    impact_ms = impact_us / 1000.0
-    df["t"] = (df["ts_ms"] - impact_ms) / 1000.0
+    # Hvis CSV har ts_ms, brug den direkte som millisekunder
+    if "ts_ms" in df.columns:
+        impact_ms = impact_us / 1000.0
+        df["t"] = (df["ts_ms"] - impact_ms) / 1000.0
+
+    # Hvis CSV har ts_us, så tjek om værdierne faktisk ligner ms
+    elif "ts_us" in df.columns:
+        ts_max = df["ts_us"].max()
+
+        # Hvis ts_us er ca. 100.000 mens impact_us er ca. 100.000.000,
+        # så er ts_us i virkeligheden millisekunder
+        if ts_max < impact_us / 10:
+            print("ADVARSEL: ts_us-kolonnen ser ud til at være i ms. Fortolker som ms.")
+            impact_ms = impact_us / 1000.0
+            df["t"] = (df["ts_us"] - impact_ms) / 1000.0
+        else:
+            df["t"] = (df["ts_us"] - impact_us) / 1_000_000.0
+
+    else:
+        raise ValueError("IMU CSV mangler både ts_ms og ts_us")
+
     df["dt"] = df["t"].diff().fillna(0.0)
 
     df["ax_g"] = raw_acc_to_g(df["ax"])
     df["ay_g"] = raw_acc_to_g(df["ay"])
     df["az_g"] = raw_acc_to_g(df["az"])
 
-    df["acc_mag_g"] = np.sqrt(
-        df["ax_g"]**2 +
-        df["ay_g"]**2 +
-        df["az_g"]**2
-    )
+    df["acc_mag_g"] = np.sqrt(df["ax_g"]**2 + df["ay_g"]**2 + df["az_g"]**2)
 
     df["gx_dps"] = raw_gyro_to_dps(df["gx"])
     df["gy_dps"] = raw_gyro_to_dps(df["gy"])
     df["gz_dps"] = raw_gyro_to_dps(df["gz"])
 
     df["gyro_mag_dps"] = np.sqrt(
-        df["gx_dps"]**2 +
-        df["gy_dps"]**2 +
-        df["gz_dps"]**2
+        df["gx_dps"]**2 + df["gy_dps"]**2 + df["gz_dps"]**2
     )
 
     rate_col = f"{ANGLE_AXIS}_dps"
     angle_deg = [0.0]
 
     for i in range(1, len(df)):
-        new_angle = angle_deg[-1] + df.iloc[i][rate_col] * df.iloc[i]["dt"]
-        angle_deg.append(new_angle)
+        angle_deg.append(angle_deg[-1] + df.iloc[i][rate_col] * df.iloc[i]["dt"])
 
     df["angle_deg"] = angle_deg
-
     return df
-
-# =========================
-# META TIL RELATIVE TIDER
-# =========================
 
 def compute_phase_times(meta_row: pd.Series):
     impact_us = meta_row["impact_us"]
@@ -114,9 +110,6 @@ def compute_phase_times(meta_row: pd.Series):
         "event_end_t": rel_s(meta_row["event_end_us"]),
     }
 
-# =========================
-# FARVEOMRÅDER
-# =========================
 
 def add_phase_spans(ax, phase_times):
     address_t = phase_times["address_t"]
@@ -138,9 +131,6 @@ def add_phase_spans(ax, phase_times):
     if follow_t is not None and end_t is not None and follow_t < end_t:
         ax.axvspan(follow_t, end_t, alpha=0.10, color="blue", label="Follow-through")
 
-# =========================
-# LODRETTE LINJER
-# =========================
 
 def add_phase_lines(ax, phase_times):
     lines = [
@@ -156,13 +146,10 @@ def add_phase_lines(ax, phase_times):
         if t is not None:
             ax.axvline(t, linestyle=style, linewidth=1.5, label=label)
 
-# =========================
-# MAIN
-# =========================
 
 def main():
     if len(sys.argv) < 3:
-        print("Brug: python visualize_swing.py <imu_csv> <meta_csv> [event_id]")
+        print("Brug: python visualize_swing_imu_and_meta_data.py <imu_csv> <meta_csv> [event_id]")
         return
 
     imu_csv = sys.argv[1]
@@ -181,6 +168,45 @@ def main():
 
     if meta_df.empty:
         print("META-filen er tom")
+        return
+
+    required_imu_cols = {
+        "event_id", "seq",
+        "ax", "ay", "az",
+        "gx", "gy", "gz"
+    }
+
+    required_meta_cols = {
+        "event_id",
+        "swing_id",
+        "sample_rate_hz",
+        "total_samples",
+        "pre_samples",
+        "post_samples",
+        "impact_index_in_event",
+        "address_start_us",
+        "backswing_start_us",
+        "forward_start_us",
+        "impact_us",
+        "follow_start_us",
+        "end_us",
+        "event_start_us",
+        "event_end_us",
+    }
+
+    missing_imu_cols = required_imu_cols - set(imu_df.columns)
+    missing_meta_cols = required_meta_cols - set(meta_df.columns)
+
+    if missing_imu_cols:
+        print("IMU CSV mangler kolonner:", sorted(missing_imu_cols))
+        return
+
+    if "ts_ms" not in imu_df.columns and "ts_us" not in imu_df.columns:
+        print("IMU CSV mangler timestamp-kolonne: forventer enten ts_ms eller ts_us")
+        return
+
+    if missing_meta_cols:
+        print("META CSV mangler kolonner:", sorted(missing_meta_cols))
         return
 
     available_events = sorted(imu_df["event_id"].unique())
@@ -213,8 +239,14 @@ def main():
     print(f"Samples i IMU-fil: {len(imu_event)}")
     print(f"Forventede samples ifølge META: {total_samples}")
     print(f"Sample rate: {sample_rate_hz} Hz")
+    print(f"Pre samples: {pre_samples}")
+    print(f"Post samples: {post_samples}")
     print(f"Impact index i event: {impact_index_in_event}")
     print(f"Impact tid [us]: {impact_us}")
+    print(f"Impact tid [ms]: {impact_us / 1000.0:.3f}")
+
+    if len(imu_event) < total_samples:
+        print(f"ADVARSEL: IMU-event er ufuldstændigt: {len(imu_event)}/{total_samples} samples")
 
     imu_event = remove_duplicate_samples(imu_event)
     imu_event = prepare_data(imu_event, impact_us)
@@ -226,8 +258,19 @@ def main():
         if value is not None:
             print(f"{key}: {value:.3f} s")
 
-    tempo = (phase_times['forward_t'] - phase_times['backswing_t']) / (phase_times['impact_t'] - phase_times['forward_t'])
-    print(f"Tempo (backswing til forward / forward til impact): {tempo}")
+    if (
+        phase_times["backswing_t"] is not None and
+        phase_times["forward_t"] is not None and
+        phase_times["impact_t"] is not None
+    ):
+        backswing_duration = phase_times["forward_t"] - phase_times["backswing_t"]
+        forward_duration = phase_times["impact_t"] - phase_times["forward_t"]
+
+        if forward_duration > 0:
+            tempo = backswing_duration / forward_duration
+            print(f"Tempo: {tempo:.2f}")
+        else:
+            print("Tempo kunne ikke beregnes: forward_duration <= 0")
 
     print("\nDEBUG:")
     print(f"imu t min/max: {imu_event['t'].min():.3f} / {imu_event['t'].max():.3f}")
@@ -235,29 +278,19 @@ def main():
     print(f"event_end_t:   {phase_times['event_end_t']}")
     print(f"impact_t:      {phase_times['impact_t']}")
 
-    # Peaks
     acc_peak_idx = imu_event["acc_mag_g"].idxmax()
     gyro_peak_idx = imu_event["gyro_mag_dps"].idxmax()
 
     acc_peak_t = imu_event.loc[acc_peak_idx, "t"]
     gyro_peak_t = imu_event.loc[gyro_peak_idx, "t"]
 
-    # Masker til vinkel-plot
     forward_t = phase_times["forward_t"]
 
-    if forward_t is not None:
-        back_mask = imu_event["t"] < forward_t
-        forward_mask = imu_event["t"] >= forward_t
-    else:
-        back_mask = imu_event["t"] <= 0
-        forward_mask = imu_event["t"] > 0
-
-    # Crop
     plot_df = imu_event.copy()
+
     if ENABLE_CROP:
         plot_df = plot_df[plot_df["t"] <= CROP_AFTER_IMPACT_SEC].copy()
 
-    # maskerne skal passe til plot_df
     if forward_t is not None:
         back_mask_plot = plot_df["t"] < forward_t
         forward_mask_plot = plot_df["t"] >= forward_t
@@ -265,12 +298,8 @@ def main():
         back_mask_plot = plot_df["t"] <= 0
         forward_mask_plot = plot_df["t"] > 0
 
-    # Figur
     fig, axes = plt.subplots(3, 1, figsize=(12, 10), sharex=True)
 
-    # ----------------------
-    # VINKEL
-    # ----------------------
     axes[0].plot(
         plot_df["t"][back_mask_plot],
         plot_df["angle_deg"][back_mask_plot],
@@ -278,6 +307,7 @@ def main():
         linewidth=2,
         label="Backswing"
     )
+
     axes[0].plot(
         plot_df["t"][forward_mask_plot],
         plot_df["angle_deg"][forward_mask_plot],
@@ -293,13 +323,10 @@ def main():
     axes[0].axvline(gyro_peak_t, linestyle=":", linewidth=1.2, label="Gyro peak")
 
     axes[0].set_ylabel("Angle [deg]")
-    axes[0].set_title(f"Golf-event analyse (event {selected_event_id}({imu_csv}))")
+    axes[0].set_title(f"Golf-event analyse: event {selected_event_id}")
     axes[0].grid(True)
     axes[0].legend(loc="upper right", ncol=2)
 
-    # ----------------------
-    # GYRO
-    # ----------------------
     axes[1].plot(plot_df["t"], plot_df["gx_dps"], alpha=0.8, label="gx")
     axes[1].plot(plot_df["t"], plot_df["gy_dps"], alpha=0.8, label="gy")
     axes[1].plot(plot_df["t"], plot_df["gz_dps"], alpha=0.8, label="gz")
@@ -312,9 +339,6 @@ def main():
     axes[1].grid(True)
     axes[1].legend(loc="upper right", ncol=2)
 
-    # ----------------------
-    # ACC
-    # ----------------------
     axes[2].plot(plot_df["t"], plot_df["ax_g"], alpha=0.8, label="ax")
     axes[2].plot(plot_df["t"], plot_df["ay_g"], alpha=0.8, label="ay")
     axes[2].plot(plot_df["t"], plot_df["az_g"], alpha=0.8, label="az")
@@ -338,6 +362,7 @@ def main():
 
     if meta_x_min is None:
         meta_x_min = data_x_min
+
     if meta_x_max is None:
         meta_x_max = data_x_max
 

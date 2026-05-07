@@ -54,9 +54,6 @@ int main(void)
         return 0;
     }
 
-    imu_ringbuffer_init();
-    imu_processing_init();
-
     k_thread_create(&imu_thread_data,
                     imu_stack,
                     IMU_STACK_SIZE,

@@ -483,7 +483,7 @@ void ble_send_test(void)
     test_pkt.samples[0].gy = 20;
     test_pkt.samples[0].gz = 30;
 
-    test_pkt.samples[0].ts_us = k_uptime_get_32();
+    test_pkt.samples[0].ts_ms = k_uptime_get_32();
     test_pkt.samples[0].seq = seq++;
 
     ble_queue_imu_packet(&test_pkt);
@@ -501,7 +501,7 @@ static void fill_ble_sample_from_imu(const imu_sample_t *src,
     dst->gy = src->gy;
     dst->gz = src->gz;
 
-    dst->ts_us = (uint32_t)src->timestamp_us;
+    dst->ts_ms = (uint32_t)(src->timestamp_us / 1000ULL);
     dst->seq = seq;
 }
 
