@@ -273,7 +273,7 @@ static void imu_read_raw(imu_sample_t *sample)
         sample->gy = sensor_data.gyr.y;
         sample->gz = sensor_data.gyr.z;
 
-        sample->timestamp_ms = k_uptime_get();
+        sample->timestamp_us = k_ticks_to_us_floor64(k_uptime_ticks());
     }
 }
 

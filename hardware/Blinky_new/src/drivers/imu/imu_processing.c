@@ -244,7 +244,7 @@ void imu_process_sample(const imu_sample_t *sample, uint32_t sample_idx)
 
             if (detect_impact(acc_dynamic, gz))
             {
-                swing_manager_notify_impact(sample_idx);
+                swing_manager_notify_impact(sample_idx, sample->timestamp_us);
 
                 swing_state = SWING_FOLLOW;
                 printk("IMPACT → FOLLOW\n");

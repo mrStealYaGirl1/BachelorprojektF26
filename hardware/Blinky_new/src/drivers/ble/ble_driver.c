@@ -43,21 +43,30 @@ static struct k_work_delayable adv_restart_work;
 static volatile bool ble_tx_busy = false;
 
 
+// fælles TX type for både IMU og meta pakker
+typedef struct {
+    uint16_t packet_type;
+
+    union {
+        ble_imu_packet_t imu;
+        ble_swing_meta_packet_t meta;
+    } payload;
+} ble_tx_item_t;
+
+
 
 // tx queue definitions
 #define BLE_TX_QUEUE_LEN 64
 #define BLE_TX_STACK_SIZE 4096
 #define BLE_TX_PRIORITY 6
 
-K_MSGQ_DEFINE(ble_tx_q, sizeof(ble_imu_packet_t), BLE_TX_QUEUE_LEN, 4);
+K_MSGQ_DEFINE(ble_tx_q, sizeof(ble_tx_item_t), BLE_TX_QUEUE_LEN, 4);
 
 K_THREAD_STACK_DEFINE(ble_tx_stack, BLE_TX_STACK_SIZE);
 static struct k_thread ble_tx_thread_data;
 
 static struct k_sem notify_done_sem;
 static bool ble_tx_thread_started = false;
-
-
 
 
 
@@ -190,7 +199,6 @@ static void mtu_updated(struct bt_conn *conn, uint16_t tx, uint16_t rx)
 static struct bt_gatt_cb gatt_callbacks = {
     .att_mtu_updated = mtu_updated,
 };
-
 /* =========================
    BLE TX THREAD
 ========================= */
@@ -200,25 +208,70 @@ static void ble_tx_thread(void *p1, void *p2, void *p3)
     ARG_UNUSED(p2);
     ARG_UNUSED(p3);
 
-    ble_imu_packet_t tx_pkt;
+    ble_tx_item_t item;
 
     while (1)
     {
-        k_msgq_get(&ble_tx_q, &tx_pkt, K_FOREVER);
+        k_msgq_get(&ble_tx_q, &item, K_FOREVER);
 
         if (!current_conn || !notify_enabled || !att_ready) {
+            continue;
+        }
+
+        const void *data = NULL;
+        uint16_t len = 0;
+
+        /* =========================
+           META packet
+        ========================== */
+        if (item.packet_type == BLE_PKT_TYPE_META)
+        {
+            data = &item.payload.meta;
+            len = sizeof(ble_swing_meta_packet_t);
+
+            printk("Sending META packet len=%u mtu=%u\n",
+                len, bt_gatt_get_mtu(current_conn));
+        }
+
+        /* =========================
+           IMU packet
+        ========================== */
+        else if (item.packet_type == BLE_PKT_TYPE_IMU)
+        {
+            data = &item.payload.imu;
+
+            len =
+                sizeof(item.payload.imu.event_id)
+              + sizeof(item.payload.imu.packet_type)
+              + sizeof(item.payload.imu.sample_count)
+              + item.payload.imu.sample_count
+                    * sizeof(ble_imu_sample_t);
+
+            if (item.payload.imu.sample_count > 0)
+            {
+                uint16_t last_seq =
+                    item.payload.imu.samples[
+                        item.payload.imu.sample_count - 1
+                    ].seq;
+
+                if ((last_seq % 50) == 0) {
+                    printk("BLE seq=%u\n", last_seq);
+                }
+            }
+        }
+
+        else
+        {
+            printk("Unknown BLE packet type: %u\n",
+                   item.packet_type);
             continue;
         }
 
         uint16_t mtu = bt_gatt_get_mtu(current_conn);
         uint16_t max_payload = (mtu >= 3) ? (mtu - 3) : 0;
 
-        uint16_t len = sizeof(tx_pkt.event_id)
-                     + sizeof(tx_pkt.packet_type)
-                     + sizeof(tx_pkt.sample_count)
-                     + tx_pkt.sample_count * sizeof(ble_imu_sample_t);
-
-        if (len > max_payload) {
+        if (len > max_payload)
+        {
             printk("Packet too large: len=%u max=%u mtu=%u\n",
                    len, max_payload, mtu);
             continue;
@@ -232,28 +285,21 @@ static void ble_tx_thread(void *p1, void *p2, void *p3)
 
         struct bt_gatt_notify_params params = {
             .attr = notify_attr,
-            .data = &tx_pkt,
-            .len = len,
+            .data = data,
+            .len  = len,
             .func = notify_cb,
         };
 
         int err = bt_gatt_notify_cb(current_conn, &params);
 
-        if (err) {
+        if (err)
+        {
             printk("Notify error: %d\n", err);
             ble_tx_busy = false;
             continue;
         }
 
         k_sem_take(&notify_done_sem, K_MSEC(200));
-
-        if (tx_pkt.sample_count > 0) {
-            uint16_t last_seq = tx_pkt.samples[tx_pkt.sample_count - 1].seq;
-
-            if ((last_seq % 50) == 0) {
-                printk("BLE seq=%u\n", last_seq);
-            }
-        }
 
         k_msleep(5); // pacing
     }
@@ -262,15 +308,27 @@ static void ble_tx_thread(void *p1, void *p2, void *p3)
 
 bool ble_queue_imu_packet(const ble_imu_packet_t *packet)
 {
-    if (packet == NULL) {
-        return false;
-    }
+    if (!packet) return false;
+    if (!current_conn || !notify_enabled || !att_ready) return false;
 
-    if (!current_conn || !notify_enabled || !att_ready) {
-        return false;
-    }
+    ble_tx_item_t item;
+    item.packet_type = BLE_PKT_TYPE_IMU;
+    item.payload.imu = *packet;
 
-    return k_msgq_put(&ble_tx_q, packet, K_MSEC(20)) == 0;
+    return k_msgq_put(&ble_tx_q, &item, K_MSEC(20)) == 0;
+}
+
+
+bool ble_queue_meta_packet(const ble_swing_meta_packet_t *packet)
+{
+    if (!packet) return false;
+    if (!current_conn || !notify_enabled || !att_ready) return false;
+
+    ble_tx_item_t item;
+    item.packet_type = BLE_PKT_TYPE_META;
+    item.payload.meta = *packet;
+
+    return k_msgq_put(&ble_tx_q, &item, K_MSEC(20)) == 0;
 }
 
 
@@ -410,7 +468,7 @@ static void fill_ble_sample_from_imu(const imu_sample_t *src,
     dst->gy = src->gy;
     dst->gz = src->gz;
 
-    dst->ts_ms = (uint32_t)src->timestamp_ms;
+    dst->ts_ms = (uint32_t)src->timestamp_us;
     dst->seq = seq;
 }
 
@@ -436,7 +494,9 @@ static void fill_ble_sample_from_imu(const imu_sample_t *src,
 
 //     k_work_submit(&ble_work);
 // }
-void ble_send_imu_sample(const imu_sample_t *sample)
+
+
+void ble_send_imu_sample_for_event(const imu_sample_t *sample, uint16_t event_id)
 {
     if (sample == NULL)
         return;
@@ -446,10 +506,9 @@ void ble_send_imu_sample(const imu_sample_t *sample)
 
     static uint16_t seq = 0;
 
-    pkt.event_id = 1;
-    pkt.packet_type = 2;
+    pkt.event_id = event_id;
+    pkt.packet_type = BLE_PKT_TYPE_IMU;
 
-    /* 🔒 overflow protection */
     if (sample_index < BLE_SAMPLES_PER_PKT)
     {
         fill_ble_sample_from_imu(sample,
@@ -468,6 +527,39 @@ void ble_send_imu_sample(const imu_sample_t *sample)
         }
     }
 }
+
+// void ble_send_imu_sample(const imu_sample_t *sample)
+// {
+//     if (sample == NULL)
+//         return;
+
+//     if (!current_conn || !notify_enabled || !att_ready)
+//         return;
+
+//     static uint16_t seq = 0;
+
+//     pkt.event_id = 1;
+//     pkt.packet_type = 2;
+
+//     /* 🔒 overflow protection */
+//     if (sample_index < BLE_SAMPLES_PER_PKT)
+//     {
+//         fill_ble_sample_from_imu(sample,
+//                                  &pkt.samples[sample_index],
+//                                  seq++);
+
+//         sample_index++;
+//     }
+
+//     if (sample_index >= BLE_SAMPLES_PER_PKT)
+//     {
+//         pkt.sample_count = sample_index;
+
+//         if (ble_queue_imu_packet(&pkt)) {
+//             sample_index = 0;
+//         }
+//     }
+// }
 
 bool ble_is_stack_ready(void)
 {

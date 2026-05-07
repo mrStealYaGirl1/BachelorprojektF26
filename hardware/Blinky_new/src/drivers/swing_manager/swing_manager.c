@@ -24,14 +24,24 @@ static uint32_t impact_index = 0;
 static uint32_t event_impact_index = 0;
 static uint32_t post_counter = 0;
 static uint8_t impact_pending = 0;
+//uint16_t event_id = 0;
 
-void swing_manager_notify_impact(uint32_t index)
+static swing_timing_t current_event_timing;
+static uint8_t current_event_timing_valid = 0;
+
+void swing_manager_notify_impact(uint32_t index, uint64_t impact_us)
 {
     if (state == STATE_WAIT)
     {
         impact_index = index;
         impact_pending = 1;
     }
+}
+
+void swing_manager_add_swing(swing_timing_t swing)
+{
+    current_event_timing = swing;
+    current_event_timing_valid = 1;
 }
 
 static void copy_event(void)
@@ -86,15 +96,46 @@ void swing_manager_thread(void *p1, void *p2, void *p3)
 
             case STATE_PROCESS:
             {
-                printk("Sending swing event...\n");
+                printk("Processing swing event...\n");
+                
+                static uint16_t event_id_counter = 0;
+                uint16_t event_id = ++event_id_counter;
 
-                uint16_t seq = 0;
+                ble_swing_meta_packet_t meta = {0};
+
+                meta.event_id = event_id;
+                meta.packet_type = BLE_PKT_TYPE_META;
+
+                meta.swing_id = current_event_timing.swing_id;
+                meta.sample_rate_hz = IMU_SAMPLE_RATE_HZ;
+                meta.total_samples = EVENT_SIZE;
+
+                meta.pre_samples = PRE_SAMPLES;
+                meta.post_samples = POST_SAMPLES;
+                meta.impact_index_in_event = PRE_SAMPLES;
+
+                meta.address_start_us   = current_event_timing.address_start_us;
+                meta.backswing_start_us = current_event_timing.backswing_start_us;
+                meta.forward_start_us   = current_event_timing.forward_start_us;
+                meta.impact_us          = current_event_timing.impact_us;
+                meta.follow_start_us    = current_event_timing.follow_start_us;
+                meta.end_us             = current_event_timing.end_us;
+
+                meta.event_start_us = swing_buffer[0].timestamp_us;
+                meta.event_end_us   = swing_buffer[EVENT_SIZE - 1].timestamp_us;
+
+                printk("Sending meta packet...\n");
+
+                ble_queue_meta_packet(&meta);
+
+                k_msleep(50);
+
+                printk("Sending swing event...\n");
 
                 for (uint32_t i = 0; i < EVENT_SIZE; i++)
                 {
-                    ble_send_imu_sample(&swing_buffer[i]);
-
-                    k_msleep(1); // pacing
+                    ble_send_imu_sample_for_event(&swing_buffer[i], event_id);
+                    k_msleep(1);
                 }
 
                 printk("Event done\n");

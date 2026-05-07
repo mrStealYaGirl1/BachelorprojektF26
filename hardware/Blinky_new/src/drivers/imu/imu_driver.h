@@ -28,7 +28,7 @@ typedef struct
     int16_t gy;
     int16_t gz;
 
-    uint64_t timestamp_ms;
+    uint64_t timestamp_us;
 
 } imu_sample_t;
 #pragma pack(pop)
