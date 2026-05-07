@@ -6,7 +6,7 @@ import csv
 from datetime import datetime
 from bleak import BleakClient, BleakScanner
 
-DEVICE_NAME = "GOLF_IMU_V2"
+DEVICE_NAME = "IMU_GOLF_V3"
 CHAR_UUID = "0000fff1-0000-1000-8000-00805f9b34fb"
 
 # =========================================================
@@ -28,7 +28,8 @@ BLE_PKT_TYPE_IMU = 2
 # uint32_t ts_ms;
 # uint16_t seq;
 # =========================================================
-BLE_IMU_SAMPLES_PER_PKT = 11
+BLE_IMU_SAMPLES_PER_PKT = 10
+
 
 IMU_HEADER_FMT = "<HHH"          # event_id, packet_type, sample_count
 IMU_SAMPLE_FMT = "<hhhhhhIH"     # ax ay az gx gy gz ts_ms seq
@@ -299,7 +300,7 @@ async def main():
     for d in devices:
         print("NAME:", d.name, "ADDR:", d.address)
 
-        if d.name and "GOLF_IMU_V2" in d.name:
+        if d.name and DEVICE_NAME in d.name:
             target = d
 
     if target is None:

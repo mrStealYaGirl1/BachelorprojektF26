@@ -28,7 +28,6 @@ I skal tænke BLE-opstart i to trin:
 ========================= */
 
 static ble_imu_packet_t pkt;
-static ble_imu_packet_t pkt_tx;
 static uint8_t sample_index = 0;
 
 static struct bt_conn *current_conn = NULL;
@@ -36,7 +35,6 @@ static bool notify_enabled = false;
 static bool att_ready = false;
 static bool ble_stack_ready = false;
 
-static struct k_work ble_work;
 static const struct bt_gatt_attr *notify_attr;
 static struct bt_gatt_exchange_params mtu_exchange_params;
 
@@ -44,21 +42,43 @@ static struct k_work_delayable adv_restart_work;
 
 static volatile bool ble_tx_busy = false;
 
+
+
+// tx queue definitions
+#define BLE_TX_QUEUE_LEN 64
+#define BLE_TX_STACK_SIZE 4096
+#define BLE_TX_PRIORITY 6
+
+K_MSGQ_DEFINE(ble_tx_q, sizeof(ble_imu_packet_t), BLE_TX_QUEUE_LEN, 4);
+
+K_THREAD_STACK_DEFINE(ble_tx_stack, BLE_TX_STACK_SIZE);
+static struct k_thread ble_tx_thread_data;
+
+static struct k_sem notify_done_sem;
+static bool ble_tx_thread_started = false;
+
+
+
+
+
+
+
+
+
+
 /* forward declaration */
-static void ble_notify_work(struct k_work *work);
 static void adv_restart_handler(struct k_work *work);
 
-
-static void notify_cb(struct bt_conn *conn, void *user_data)
-{
-    ble_tx_busy = false;
-}
 
 /* =========================
    CALLBACKS
 ========================= */
 
-
+static void notify_cb(struct bt_conn *conn, void *user_data)
+{
+    ble_tx_busy = false;
+    k_sem_give(&notify_done_sem);
+}
 
 static void mtu_exchange_cb(struct bt_conn *conn, uint8_t err,
                             struct bt_gatt_exchange_params *params)
@@ -172,56 +192,85 @@ static struct bt_gatt_cb gatt_callbacks = {
 };
 
 /* =========================
-   BLE WORKQUEUE
+   BLE TX THREAD
 ========================= */
-static void ble_notify_work(struct k_work *work)
+static void ble_tx_thread(void *p1, void *p2, void *p3)
 {
-    if (!current_conn || !notify_enabled || !att_ready) {
-        ble_tx_busy = false;
-        return;
-    }
+    ARG_UNUSED(p1);
+    ARG_UNUSED(p2);
+    ARG_UNUSED(p3);
 
-    uint16_t mtu = bt_gatt_get_mtu(current_conn);
-    uint16_t max_payload = (mtu >= 3) ? (mtu - 3) : 0;
-    uint16_t len = sizeof(pkt_tx.event_id)
-             + sizeof(pkt_tx.packet_type)
-             + sizeof(pkt_tx.sample_count)
-             + pkt_tx.sample_count * sizeof(ble_imu_sample_t);
+    ble_imu_packet_t tx_pkt;
 
-    if (len > max_payload)
+    while (1)
     {
-        printk("Packet too large: len=%u, max=%u, mtu=%u\n",
-               len, max_payload, mtu);
-        ble_tx_busy = false;
-        return;
-    }
+        k_msgq_get(&ble_tx_q, &tx_pkt, K_FOREVER);
 
-    struct bt_gatt_notify_params params = {
-        .attr = notify_attr,
-        .data = &pkt_tx,
-        .len = len,
-        .func = notify_cb,
-    };
+        if (!current_conn || !notify_enabled || !att_ready) {
+            continue;
+        }
 
-    int err = bt_gatt_notify_cb(current_conn, &params);
+        uint16_t mtu = bt_gatt_get_mtu(current_conn);
+        uint16_t max_payload = (mtu >= 3) ? (mtu - 3) : 0;
 
-    if (err)
-    {
-        printk("Notify error: %d\n", err);
-        ble_tx_busy = false;   // 🔥 VIGTIG (ellers kan du deadlocke)
-    }
-    else
-    { 
-        if (pkt_tx.sample_count > 0)
-        {
-            uint16_t last_seq = pkt_tx.samples[pkt_tx.sample_count - 1].seq;
+        uint16_t len = sizeof(tx_pkt.event_id)
+                     + sizeof(tx_pkt.packet_type)
+                     + sizeof(tx_pkt.sample_count)
+                     + tx_pkt.sample_count * sizeof(ble_imu_sample_t);
+
+        if (len > max_payload) {
+            printk("Packet too large: len=%u max=%u mtu=%u\n",
+                   len, max_payload, mtu);
+            continue;
+        }
+
+        while (k_sem_take(&notify_done_sem, K_NO_WAIT) == 0) {
+            /* drain semaphore */
+        }
+
+        ble_tx_busy = true;
+
+        struct bt_gatt_notify_params params = {
+            .attr = notify_attr,
+            .data = &tx_pkt,
+            .len = len,
+            .func = notify_cb,
+        };
+
+        int err = bt_gatt_notify_cb(current_conn, &params);
+
+        if (err) {
+            printk("Notify error: %d\n", err);
+            ble_tx_busy = false;
+            continue;
+        }
+
+        k_sem_take(&notify_done_sem, K_MSEC(200));
+
+        if (tx_pkt.sample_count > 0) {
+            uint16_t last_seq = tx_pkt.samples[tx_pkt.sample_count - 1].seq;
 
             if ((last_seq % 50) == 0) {
-                printk("BLE seq=%d\n", last_seq);
+                printk("BLE seq=%u\n", last_seq);
             }
         }
+
+        k_msleep(5); // pacing
+    }
+}
+
+
+bool ble_queue_imu_packet(const ble_imu_packet_t *packet)
+{
+    if (packet == NULL) {
+        return false;
     }
 
+    if (!current_conn || !notify_enabled || !att_ready) {
+        return false;
+    }
+
+    return k_msgq_put(&ble_tx_q, packet, K_MSEC(20)) == 0;
 }
 
 
@@ -276,8 +325,21 @@ void ble_post_init(void)
 {
     notify_attr = &test_svc.attrs[2];
 
-    k_work_init(&ble_work, ble_notify_work);
+    k_sem_init(&notify_done_sem, 0, 1);
     k_work_init_delayable(&adv_restart_work, adv_restart_handler);
+
+    if (!ble_tx_thread_started) {
+        k_thread_create(&ble_tx_thread_data,
+                        ble_tx_stack,
+                        BLE_TX_STACK_SIZE,
+                        ble_tx_thread,
+                        NULL, NULL, NULL,
+                        BLE_TX_PRIORITY,
+                        0,
+                        K_NO_WAIT);
+
+        ble_tx_thread_started = true;
+    }
 
     bt_gatt_cb_register(&gatt_callbacks);
 
@@ -314,32 +376,26 @@ void ble_init(void)
 
 void ble_send_test(void)
 {
-    if (!current_conn || !notify_enabled || !att_ready || ble_tx_busy)
-    {
-        return;
-    }
-
     static uint16_t seq = 0;
 
-    pkt.event_id = 1;
-    pkt.packet_type = 2;
-    pkt.sample_count = 1;
+    ble_imu_packet_t test_pkt;
 
-    pkt.samples[0].ax = 100 + seq;
-    pkt.samples[0].ay = 200;
-    pkt.samples[0].az = 300;
+    test_pkt.event_id = 1;
+    test_pkt.packet_type = 2;
+    test_pkt.sample_count = 1;
 
-    pkt.samples[0].gx = 10;
-    pkt.samples[0].gy = 20;
-    pkt.samples[0].gz = 30;
+    test_pkt.samples[0].ax = 100 + seq;
+    test_pkt.samples[0].ay = 200;
+    test_pkt.samples[0].az = 300;
 
-    pkt.samples[0].ts_ms = k_uptime_get_32();
-    pkt.samples[0].seq = seq++;
+    test_pkt.samples[0].gx = 10;
+    test_pkt.samples[0].gy = 20;
+    test_pkt.samples[0].gz = 30;
 
-    memcpy(&pkt_tx, &pkt, sizeof(pkt));
+    test_pkt.samples[0].ts_ms = k_uptime_get_32();
+    test_pkt.samples[0].seq = seq++;
 
-    ble_tx_busy = true;
-    k_work_submit(&ble_work);
+    ble_queue_imu_packet(&test_pkt);
 }
 
 static void fill_ble_sample_from_imu(const imu_sample_t *src,
@@ -407,13 +463,7 @@ void ble_send_imu_sample(const imu_sample_t *sample)
     {
         pkt.sample_count = sample_index;
 
-        if (!ble_tx_busy)
-        {
-            memcpy(&pkt_tx, &pkt, sizeof(pkt));
-
-            ble_tx_busy = true;
-            k_work_submit(&ble_work);
-
+        if (ble_queue_imu_packet(&pkt)) {
             sample_index = 0;
         }
     }

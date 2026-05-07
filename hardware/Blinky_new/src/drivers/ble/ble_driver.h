@@ -54,3 +54,4 @@ bool ble_is_stack_ready(void);
 void ble_send_test(void);
 void ble_send_imu_sample(const imu_sample_t *sample);
 void ble_post_init(void);
+bool ble_queue_imu_packet(const ble_imu_packet_t *packet);
