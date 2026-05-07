@@ -2,6 +2,7 @@
 
 #include "imu_processing.h"
 #include "../swing_manager/swing_manager.h"
+#include "../imu/imu_driver.h"
 
 #include <zephyr/kernel.h>
 #include <zephyr/sys/printk.h>
@@ -24,6 +25,7 @@
 #define SWING_CONFIRM_SAMPLES        2
 #define RESET_CONFIRM_SAMPLES       20
 #define FORWARD_TIMEOUT_SAMPLES    200
+
 
 /* =====================================================
    ENERGY DETECTOR
@@ -73,6 +75,17 @@ static uint32_t forward_counter = 0;
 
 static swing_timing_t current_swing = {0};
 static uint32_t next_swing_id = 1;
+
+
+
+/* =====================================================
+   FIND BACKSWING PEAK & ZERO CROSS (forward start)
+===================================================== */
+static float backswing_peak_gz = 0.0f;
+static uint32_t backswing_peak_idx = 0;
+static int32_t backswing_zero_cross_idx = 0;
+
+#define ZERO_CROSS_CONFIRM_SAMPLES 2
 
 /* =====================================================
    INIT
@@ -134,6 +147,53 @@ static int detect_impact(float acc_dynamic, float gz)
 
     return 0;
 }
+
+
+static uint32_t find_backswing_start_idx(uint32_t trigger_idx)
+{
+    imu_ringbuffer_t *rb = imu_get_ringbuffer();
+
+    const uint32_t search_back = 80;   // 0.4 s ved 200 Hz
+    const float still_thresh = 3.0f;
+    const uint8_t still_needed = 3;
+
+    uint32_t best_idx = trigger_idx;
+    uint8_t still_count = 0;
+    bool found_still_region = false;
+
+    for (uint32_t k = search_back; k > 0; k--)
+    {
+        uint32_t idx = (trigger_idx + IMU_BUFFER_SIZE - k) % IMU_BUFFER_SIZE;
+
+        float gz_dps =
+            (rb->buffer[idx].gz * (2000.0f / 32768.0f)) - gyro_bias_z;
+
+        if (fabsf(gz_dps) < still_thresh)
+        {
+            still_count++;
+
+            if (still_count >= still_needed)
+            {
+                found_still_region = true;
+            }
+        }
+        else
+        {
+            if (found_still_region)
+            {
+                best_idx = idx;
+                break;
+            }
+
+            still_count = 0;
+        }
+    }
+
+    return best_idx;
+}
+
+
+
 
 /* =====================================================
    MAIN PROCESS
@@ -198,15 +258,23 @@ void imu_process_sample(const imu_sample_t *sample, uint32_t sample_idx)
             else
                 backswing_confirm = 0;
 
-            if (backswing_confirm >= 3)
+            if (backswing_confirm >= SWING_CONFIRM_SAMPLES)
             {
-                current_swing.backswing_start_us = sample->timestamp_us;
-                current_swing.backswing_start_idx = sample_idx;
+                uint32_t trigger_idx =
+                    (sample_idx + IMU_BUFFER_SIZE - (SWING_CONFIRM_SAMPLES - 1)) % IMU_BUFFER_SIZE;
+
+                uint32_t start_idx = find_backswing_start_idx(trigger_idx);
+
+                current_swing.backswing_start_us =
+                    imu_get_ringbuffer()->buffer[start_idx].timestamp_us;
+
+                current_swing.backswing_start_idx = start_idx;
+
+                backswing_peak_gz = gz;
+                backswing_peak_idx = sample_idx;
 
                 swing_state = SWING_BACKSWING;
-
                 backswing_confirm = 0;
-                backswing_peak = gz;
 
                 printk("BACKSWING\n");
             }
@@ -218,28 +286,33 @@ void imu_process_sample(const imu_sample_t *sample, uint32_t sample_idx)
 
         case SWING_BACKSWING:
         {
-            if (gz > backswing_peak)
-                backswing_peak = gz;
-
-            if (backswing_peak > 40.0f)
+            if (gz > backswing_peak_gz)
             {
-                if (gz < 0)
+                backswing_peak_gz = gz;
+                backswing_peak_idx = sample_idx;
+            }
+
+            if (backswing_peak_gz > GZ_BACKSWING_START_DPS)
+            {
+                if (gz < 0.0f)
                     zero_cross_confirm++;
                 else
                     zero_cross_confirm = 0;
 
-                if (zero_cross_confirm >= SWING_CONFIRM_SAMPLES)
+                if (zero_cross_confirm >= ZERO_CROSS_CONFIRM_SAMPLES)
                 {
-                    current_swing.forward_start_us = sample->timestamp_us;
-                    current_swing.forward_start_idx = sample_idx;
+                    backswing_zero_cross_idx = sample_idx;
+
+                    current_swing.forward_start_us =
+                        imu_get_ringbuffer()->buffer[backswing_zero_cross_idx].timestamp_us;
+
+                    current_swing.forward_start_idx = backswing_zero_cross_idx;
 
                     swing_state = SWING_FORWARD;
-
                     zero_cross_confirm = 0;
                     forward_counter = 0;
 
-                    printk("FORWARD (peak=%d)\n", (int)(backswing_peak));
-
+                    printk("FORWARD (peak=%d)\n", (int)backswing_peak_gz);
                     break;
                 }
             }
