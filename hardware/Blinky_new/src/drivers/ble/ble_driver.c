@@ -10,8 +10,6 @@
 
 #include "ble_driver.h"
 
-
-
 /*
 I skal tænke BLE-opstart i to trin:
 
@@ -81,7 +79,7 @@ static void ccc_cfg_changed(const struct bt_gatt_attr *attr, uint16_t value)
 
 
 /* =========================
-   Advertising start (kan kaldes fra flere steder)
+   Advertising start
 ========================= */
 
 static int start_advertising(void)
@@ -108,7 +106,6 @@ static int start_advertising(void)
                            NULL, 0);
 }
 
-
 static void connected(struct bt_conn *conn, uint8_t err)
 {
     if (err) {
@@ -125,12 +122,16 @@ static void connected(struct bt_conn *conn, uint8_t err)
     current_conn = bt_conn_ref(conn);
 
     notify_enabled = false;
-    att_ready = true;   // midlertidigt uden MTU exchange
+    att_ready = true;
+    ble_tx_busy = false;
+    sample_index = 0;
 
-    // mtu_exchange_params.func = mtu_exchange_cb;
+    att_ready = false;
 
-    // int ret = bt_gatt_exchange_mtu(conn, &mtu_exchange_params);
-    // printk("bt_gatt_exchange_mtu() returned: %d\n", ret);
+    mtu_exchange_params.func = mtu_exchange_cb;
+
+    int ret = bt_gatt_exchange_mtu(conn, &mtu_exchange_params);
+    printk("bt_gatt_exchange_mtu() returned: %d\n", ret);
 }
 
 
@@ -145,6 +146,8 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
 
     notify_enabled = false;
     att_ready = false;
+    ble_tx_busy = false;
+    sample_index = 0;
 
     k_work_schedule(&adv_restart_work, K_MSEC(500));
 }
@@ -252,26 +255,6 @@ BT_GATT_SERVICE_DEFINE(test_svc,
         BT_GATT_PERM_READ | BT_GATT_PERM_WRITE),
 );
 
-// BT_GATT_SERVICE_DEFINE(test_svc,
-//     BT_GATT_PRIMARY_SERVICE(BT_UUID_DECLARE_16(0xFFF0)),
-
-//     // BT_GATT_CHARACTERISTIC(
-//     //     BT_UUID_DECLARE_16(0xFFF1),
-//     //     BT_GATT_CHRC_NOTIFY,
-//     //     BT_GATT_PERM_NONE,
-//     //     NULL, NULL, NULL
-//     // ),
-//     BT_GATT_CHARACTERISTIC(
-//         BT_UUID_DECLARE_16(0xFFF1),
-//         BT_GATT_CHRC_NOTIFY | BT_GATT_CHRC_READ,
-//         BT_GATT_PERM_READ,
-//         read_dummy, NULL, NULL
-//     ),
-
-//     BT_GATT_CCC(ccc_cfg_changed,
-//         BT_GATT_PERM_READ | BT_GATT_PERM_WRITE),
-// );
-
 
 /* =========================
    Bluetooth ready callback and post-init
@@ -296,7 +279,7 @@ void ble_post_init(void)
     k_work_init(&ble_work, ble_notify_work);
     k_work_init_delayable(&adv_restart_work, adv_restart_handler);
 
-    //bt_gatt_cb_register(&gatt_callbacks);
+    bt_gatt_cb_register(&gatt_callbacks);
 
     int err = start_advertising();
 
@@ -331,10 +314,8 @@ void ble_init(void)
 
 void ble_send_test(void)
 {
-    if (!current_conn || !notify_enabled || !att_ready)
+    if (!current_conn || !notify_enabled || !att_ready || ble_tx_busy)
     {
-        printk("Not ready: conn=%p notify=%d att=%d\n",
-               current_conn, notify_enabled, att_ready);
         return;
     }
 
@@ -355,7 +336,9 @@ void ble_send_test(void)
     pkt.samples[0].ts_ms = k_uptime_get_32();
     pkt.samples[0].seq = seq++;
 
-    /* 🔥 KUN DET HER */
+    memcpy(&pkt_tx, &pkt, sizeof(pkt));
+
+    ble_tx_busy = true;
     k_work_submit(&ble_work);
 }
 

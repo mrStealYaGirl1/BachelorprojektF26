@@ -36,6 +36,7 @@ int main(void)
     while (1) {
         gpio_pin_toggle(gpio1, LED_PIN);
         //printk("main alive\n");
+        ble_send_test();
         k_sleep(K_SECONDS(1));
     }
 }
