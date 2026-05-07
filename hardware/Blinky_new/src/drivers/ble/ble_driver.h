@@ -15,7 +15,7 @@
 /* ❌ FJERNET: #pragma pack(pop)     */
 /* 👉 Zephyr + ARM håndterer alignment korrekt selv */
 
-#define BLE_SAMPLES_PER_PKT 10
+#define BLE_SAMPLES_PER_PKT 5
 
 /* ---------------------------------
    SAMPLE STRUCT (uændret)

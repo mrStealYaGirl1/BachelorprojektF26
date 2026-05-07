@@ -69,12 +69,6 @@ static struct k_sem notify_done_sem;
 static bool ble_tx_thread_started = false;
 
 
-
-
-
-
-
-
 /* forward declaration */
 static void adv_restart_handler(struct k_work *work);
 
@@ -123,17 +117,41 @@ static int start_advertising(void)
         BT_DATA_BYTES(BT_DATA_FLAGS,
             (BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR)),
 
+        BT_DATA_BYTES(BT_DATA_UUID16_ALL, 0xF0, 0xFF),
+
         BT_DATA(BT_DATA_NAME_COMPLETE,
             STRINGIFY(CONFIG_BT_DEVICE_NAME),
             strlen(STRINGIFY(CONFIG_BT_DEVICE_NAME))),
-
-        BT_DATA_BYTES(BT_DATA_UUID16_ALL, 0xF0, 0xFF)
     };
 
     return bt_le_adv_start(&adv_param,
                            ad, ARRAY_SIZE(ad),
                            NULL, 0);
 }
+
+// static int start_advertising(void)
+// {
+//     static const struct bt_le_adv_param adv_param = {
+//         .options = BT_LE_ADV_OPT_CONN,
+//         .interval_min = BT_GAP_ADV_FAST_INT_MIN_2,
+//         .interval_max = BT_GAP_ADV_FAST_INT_MAX_2,
+//     };
+
+//     const struct bt_data ad[] = {
+//         BT_DATA_BYTES(BT_DATA_FLAGS,
+//             (BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR)),
+
+//         BT_DATA(BT_DATA_NAME_COMPLETE,
+//             STRINGIFY(CONFIG_BT_DEVICE_NAME),
+//             strlen(STRINGIFY(CONFIG_BT_DEVICE_NAME))),
+
+//         BT_DATA_BYTES(BT_DATA_UUID128_ALL, BT_UUID_GOLF_SVC_VAL),
+//     };
+
+//     return bt_le_adv_start(&adv_param,
+//                            ad, ARRAY_SIZE(ad),
+//                            NULL, 0);
+// }
 
 static void connected(struct bt_conn *conn, uint8_t err)
 {
@@ -361,6 +379,21 @@ BT_GATT_SERVICE_DEFINE(test_svc,
     BT_GATT_CCC(ccc_cfg_changed,
         BT_GATT_PERM_READ | BT_GATT_PERM_WRITE),
 );
+
+
+// BT_GATT_SERVICE_DEFINE(test_svc,
+//     BT_GATT_PRIMARY_SERVICE(&golf_svc_uuid.uuid),
+
+//     BT_GATT_CHARACTERISTIC(
+//         &golf_chr_uuid.uuid,
+//         BT_GATT_CHRC_READ | BT_GATT_CHRC_NOTIFY,
+//         BT_GATT_PERM_READ,
+//         read_dummy, NULL, &dummy_value
+//     ),
+
+//     BT_GATT_CCC(ccc_cfg_changed,
+//         BT_GATT_PERM_READ | BT_GATT_PERM_WRITE),
+// );
 
 
 /* =========================

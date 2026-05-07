@@ -50,7 +50,7 @@ def open_csv_files():
     imu_csv_file = open(imu_csv_filename, "w", newline="", encoding="utf-8")
     imu_csv_writer = csv.writer(imu_csv_file)
     imu_csv_writer.writerow([
-        "event_id", "seq", "ts_ms",
+        "event_id", "seq", "ts_us",
         "ax", "ay", "az",
         "gx", "gy", "gz"
     ])
@@ -172,13 +172,13 @@ def decode_meta_packet(data: bytes):
     ])
     meta_csv_file.flush()
 
-    duration_ms = (event_end_us - event_start_us) / 1000.0
+    duration_us = (event_end_us - event_start_us) / 1000.0
 
     print(
         f"[META] event={event_id} swing_id={swing_id} "
         f"samples={total_samples} fs={sample_rate_hz}Hz "
         f"impact_idx={impact_index_in_event} "
-        f"duration={duration_ms:.1f} ms"
+        f"duration={duration_us:.1f} us"
     )
 
 
@@ -199,12 +199,12 @@ def decode_imu_packet(data: bytes):
     offset = IMU_HEADER_SIZE
 
     for _ in range(sample_count):
-        ax, ay, az, gx, gy, gz, ts_ms, seq = struct.unpack_from(IMU_SAMPLE_FMT, data, offset)
+        ax, ay, az, gx, gy, gz, ts_us, seq = struct.unpack_from(IMU_SAMPLE_FMT, data, offset)
         offset += IMU_SAMPLE_SIZE
-        process_imu_sample(event_id, seq, ts_ms, ax, ay, az, gx, gy, gz)
+        process_imu_sample(event_id, seq, ts_us, ax, ay, az, gx, gy, gz)
 
 
-def process_imu_sample(event_id, seq, ts_ms, ax, ay, az, gx, gy, gz):
+def process_imu_sample(event_id, seq, ts_us, ax, ay, az, gx, gy, gz):
     if event_id not in event_sample_counts:
         event_sample_counts[event_id] = 0
         last_seq_per_event[event_id] = None
@@ -218,10 +218,10 @@ def process_imu_sample(event_id, seq, ts_ms, ax, ay, az, gx, gy, gz):
     last_seq_per_event[event_id] = seq
 
     if seq % 100 == 0:
-        print(f"[IMU] EV:{event_id} SEQ:{seq} T:{ts_ms}")
+        print(f"[IMU] EV:{event_id} SEQ:{seq} T:{ts_us}")
 
     imu_csv_writer.writerow([
-        event_id, seq, ts_ms,
+        event_id, seq, ts_us,
         ax, ay, az,
         gx, gy, gz
     ])
@@ -309,14 +309,14 @@ async def main():
             print("\nMETA received for events:")
             for event_id in sorted(meta_per_event.keys()):
                 meta = meta_per_event[event_id]
-                duration_ms = (meta["event_end_us"] - meta["event_start_us"]) / 1000.0
+                duration_us = (meta["event_end_us"] - meta["event_start_us"]) / 1000.0
 
                 print(
                     f"Event {event_id}: "
                     f"swing_id={meta['swing_id']}, "
                     f"impact_idx={meta['impact_index_in_event']}, "
                     f"sample_rate={meta['sample_rate_hz']} Hz, "
-                    f"duration={duration_ms:.1f} ms"
+                    f"duration={duration_us:.1f} us"
                 )
 
 
