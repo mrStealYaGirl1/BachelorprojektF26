@@ -7,7 +7,6 @@
 #include "../bmi270/bmi270.h"
 
 #include "imu_processing.h"
-#include "../ble/ble_driver.h"
 
 #include <zephyr/kernel.h>
 #include <zephyr/sys/printk.h>
@@ -252,6 +251,10 @@ int imu_init(void)
     }
 
     printk("BMI270 ready\n");
+
+    imu_ringbuffer_init();
+    imu_processing_init();
+
     return 0;
 }
 

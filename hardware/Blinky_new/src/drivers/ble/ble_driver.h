@@ -30,7 +30,7 @@ typedef struct __attribute__((packed))
     int16_t gy;
     int16_t gz;
 
-    uint32_t ts_ms;
+    uint32_t ts_us;
     uint16_t seq;
 
 } ble_imu_sample_t;

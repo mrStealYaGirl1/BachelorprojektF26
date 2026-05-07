@@ -68,6 +68,13 @@ static float backswing_peak = 0.0f;
 static uint32_t forward_counter = 0;
 
 /* =====================================================
+   SWING TIMING
+===================================================== */
+
+static swing_timing_t current_swing = {0};
+static uint32_t next_swing_id = 1;
+
+/* =====================================================
    INIT
 ===================================================== */
 
@@ -82,6 +89,8 @@ void imu_processing_init(void)
 
     swing_state = SWING_IDLE;
     still_counter = 0;
+
+    memset(&current_swing, 0, sizeof(current_swing));
 
     printk("IMU processing upgraded ready\n");
 }
@@ -154,6 +163,7 @@ void imu_process_sample(const imu_sample_t *sample, uint32_t sample_idx)
     switch (swing_state)
     {
         /* ---------------- IDLE ---------------- */
+
         case SWING_IDLE:
         {
             if (gyro_mag < 5.0f)
@@ -163,14 +173,24 @@ void imu_process_sample(const imu_sample_t *sample, uint32_t sample_idx)
 
             if (still_counter > 50)
             {
+                memset(&current_swing, 0, sizeof(current_swing));
+
+                current_swing.swing_id = next_swing_id++;
+
+                current_swing.address_start_us = sample->timestamp_us;
+                current_swing.address_start_idx = sample_idx;
+
                 swing_state = SWING_ADDRESS;
                 still_counter = 0;
+
                 printk("ADDRESS\n");
             }
+
             break;
         }
 
         /* ---------------- ADDRESS ---------------- */
+
         case SWING_ADDRESS:
         {
             if (gz > GZ_BACKSWING_START_DPS)
@@ -180,24 +200,27 @@ void imu_process_sample(const imu_sample_t *sample, uint32_t sample_idx)
 
             if (backswing_confirm >= 3)
             {
-                swing_state = SWING_BACKSWING;
-                backswing_confirm = 0;
+                current_swing.backswing_start_us = sample->timestamp_us;
+                current_swing.backswing_start_idx = sample_idx;
 
+                swing_state = SWING_BACKSWING;
+
+                backswing_confirm = 0;
                 backswing_peak = gz;
 
                 printk("BACKSWING\n");
             }
+
             break;
         }
 
         /* ---------------- BACKSWING ---------------- */
+
         case SWING_BACKSWING:
         {
-            /* track peak */
             if (gz > backswing_peak)
                 backswing_peak = gz;
 
-            /* detect zero-cross */
             if (backswing_peak > 40.0f)
             {
                 if (gz < 0)
@@ -207,20 +230,24 @@ void imu_process_sample(const imu_sample_t *sample, uint32_t sample_idx)
 
                 if (zero_cross_confirm >= SWING_CONFIRM_SAMPLES)
                 {
+                    current_swing.forward_start_us = sample->timestamp_us;
+                    current_swing.forward_start_idx = sample_idx;
+
                     swing_state = SWING_FORWARD;
+
                     zero_cross_confirm = 0;
                     forward_counter = 0;
 
                     printk("FORWARD (peak=%d)\n", (int)(backswing_peak));
+
                     break;
                 }
             }
             else
             {
-                zero_cross_confirm = 0;   // <-- VIGTIG!
+                zero_cross_confirm = 0;
             }
 
-            /* reset if motion dies */
             if (fabsf(gz) < GZ_IDLE_DPS && gyro_mag < 6.0f)
                 reset_confirm++;
             else
@@ -238,22 +265,33 @@ void imu_process_sample(const imu_sample_t *sample, uint32_t sample_idx)
         }
 
         /* ---------------- FORWARD ---------------- */
+
         case SWING_FORWARD:
         {
             forward_counter++;
 
             if (detect_impact(acc_dynamic, gz))
             {
-                swing_manager_notify_impact(sample_idx, sample->timestamp_us);
+                current_swing.impact_us = sample->timestamp_us;
+                current_swing.impact_idx = sample_idx;
+
+                current_swing.follow_start_us = sample->timestamp_us;
+                current_swing.follow_start_idx = sample_idx;
+
+                swing_manager_notify_impact(sample_idx,
+                                            sample->timestamp_us);
 
                 swing_state = SWING_FOLLOW;
+
                 printk("IMPACT → FOLLOW\n");
+
                 break;
             }
 
             if (forward_counter > FORWARD_TIMEOUT_SAMPLES)
             {
                 swing_state = SWING_IDLE;
+
                 printk("RESET from FORWARD (timeout)\n");
             }
 
@@ -261,13 +299,21 @@ void imu_process_sample(const imu_sample_t *sample, uint32_t sample_idx)
         }
 
         /* ---------------- FOLLOW ---------------- */
+
         case SWING_FOLLOW:
         {
             if (gyro_mag < GZ_IDLE_DPS)
             {
+                current_swing.end_us = sample->timestamp_us;
+                current_swing.end_idx = sample_idx;
+
+                swing_manager_add_swing(current_swing);
+
                 swing_state = SWING_IDLE;
+
                 printk("SWING END\n");
             }
+
             break;
         }
     }
