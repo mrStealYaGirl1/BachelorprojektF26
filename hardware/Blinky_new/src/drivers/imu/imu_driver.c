@@ -306,8 +306,6 @@ void imu_thread(void *p1, void *p2, void *p3)
 
         imu_process_sample(&sample, idx);
 
-        // ble_send_imu_sample(&sample);
-
         static int print_counter = 0;
 
         if (++print_counter >= 100)
@@ -319,6 +317,6 @@ void imu_thread(void *p1, void *p2, void *p3)
             //     sample.gx, sample.gy, sample.gz);
         }
 
-        k_msleep(50); // Before 5 = 200HZ. 10 = 100HZ
+        k_msleep(5); // Before 5 = 200HZ. 10 = 100HZ
     }
 }
