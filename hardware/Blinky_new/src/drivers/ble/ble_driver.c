@@ -56,7 +56,7 @@ typedef struct {
 
 
 // tx queue definitions
-#define BLE_TX_QUEUE_LEN 64
+#define BLE_TX_QUEUE_LEN 128
 #define BLE_TX_STACK_SIZE 4096
 #define BLE_TX_PRIORITY 6
 
@@ -69,8 +69,23 @@ static struct k_sem notify_done_sem;
 static bool ble_tx_thread_started = false;
 
 
+
+
+static uint32_t notify_ok_count = 0;
+static uint32_t notify_fail_count = 0;
+static uint32_t notify_timeout_count = 0;
+static uint32_t queue_drop_count = 0;
+static uint32_t packets_queued = 0;
+static uint32_t meta_queued = 0;
+static uint32_t imu_queued = 0;
+
+
+
+
+
 /* forward declaration */
 static void adv_restart_handler(struct k_work *work);
+
 
 
 /* =========================
@@ -79,6 +94,8 @@ static void adv_restart_handler(struct k_work *work);
 
 static void notify_cb(struct bt_conn *conn, void *user_data)
 {
+    notify_ok_count++;
+
     ble_tx_busy = false;
     k_sem_give(&notify_done_sem);
 }
@@ -312,42 +329,116 @@ static void ble_tx_thread(void *p1, void *p2, void *p3)
 
         if (err)
         {
+            notify_fail_count++;
+
             printk("Notify error: %d\n", err);
             ble_tx_busy = false;
             continue;
         }
 
-        k_sem_take(&notify_done_sem, K_MSEC(200));
+        int sem_ret = k_sem_take(&notify_done_sem, K_MSEC(200));
 
-        k_msleep(5); // pacing
+        if (sem_ret != 0)
+        {
+            notify_timeout_count++;
+            ble_tx_busy = false;
+
+            printk("Notify timeout\n");
+        }
+        // if (err)
+        // {
+        //     printk("Notify error: %d\n", err);
+        //     ble_tx_busy = false;
+        //     continue;
+        // }
+
+        k_msleep(18); // pacing
+
+        if ((notify_ok_count % 100) == 0 && notify_ok_count > 0)
+        {
+            printk("BLE stats: ok=%u fail=%u timeout=%u queued=%u imu=%u meta=%u drops=%u q_used=%u\n",
+                notify_ok_count,
+                notify_fail_count,
+                notify_timeout_count,
+                packets_queued,
+                imu_queued,
+                meta_queued,
+                queue_drop_count,
+                k_msgq_num_used_get(&ble_tx_q));
+        }
     }
 }
-
 
 bool ble_queue_imu_packet(const ble_imu_packet_t *packet)
 {
     if (!packet) return false;
-    if (!current_conn || !notify_enabled || !att_ready) return false;
+
+    if (!current_conn || !notify_enabled || !att_ready) {
+        queue_drop_count++;
+        return false;
+    }
 
     ble_tx_item_t item;
     item.packet_type = BLE_PKT_TYPE_IMU;
     item.payload.imu = *packet;
 
-    return k_msgq_put(&ble_tx_q, &item, K_FOREVER) == 0;
-}
+    int ret = k_msgq_put(&ble_tx_q, &item, K_MSEC(50)); // wait 50 ms for space in queue 
 
+    if (ret == 0) {
+        packets_queued++;
+        imu_queued++;
+        return true;
+    }
+
+    queue_drop_count++;
+    return false;
+}
+// bool ble_queue_imu_packet(const ble_imu_packet_t *packet)
+// {
+//     if (!packet) return false;
+//     if (!current_conn || !notify_enabled || !att_ready) return false;
+
+//     ble_tx_item_t item;
+//     item.packet_type = BLE_PKT_TYPE_IMU;
+//     item.payload.imu = *packet;
+
+//     return k_msgq_put(&ble_tx_q, &item, K_FOREVER) == 0;
+// }
 
 bool ble_queue_meta_packet(const ble_swing_meta_packet_t *packet)
 {
     if (!packet) return false;
-    if (!current_conn || !notify_enabled || !att_ready) return false;
+    if (!current_conn || !notify_enabled || !att_ready) {
+        queue_drop_count++;
+        return false;
+    }
 
     ble_tx_item_t item;
     item.packet_type = BLE_PKT_TYPE_META;
     item.payload.meta = *packet;
 
-    return k_msgq_put(&ble_tx_q, &item, K_MSEC(20)) == 0;
+    int ret = k_msgq_put(&ble_tx_q, &item, K_MSEC(20));
+
+    if (ret == 0) {
+        packets_queued++;
+        meta_queued++;
+        return true;
+    }
+
+    queue_drop_count++;
+    return false;
 }
+// bool ble_queue_meta_packet(const ble_swing_meta_packet_t *packet)
+// {
+//     if (!packet) return false;
+//     if (!current_conn || !notify_enabled || !att_ready) return false;
+
+//     ble_tx_item_t item;
+//     item.packet_type = BLE_PKT_TYPE_META;
+//     item.payload.meta = *packet;
+
+//     return k_msgq_put(&ble_tx_q, &item, K_MSEC(20)) == 0;
+// }
 
 
 /* =========================
@@ -612,3 +703,4 @@ bool ble_is_tx_busy(void)
 {
     return ble_tx_busy || (k_msgq_num_used_get(&ble_tx_q) > 0);
 }
+
