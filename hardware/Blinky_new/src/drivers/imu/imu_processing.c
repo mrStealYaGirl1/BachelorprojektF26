@@ -58,16 +58,22 @@ static swing_state_t swing_state = SWING_IDLE;
    INTERNAL STATE
 ===================================================== */
 
-static float gyro_bias_z = 0;
-
 static uint32_t still_counter = 0;
 static uint8_t backswing_confirm = 0;
 static uint8_t zero_cross_confirm = 0;
 static uint8_t reset_confirm = 0;
-
-static float backswing_peak = 0.0f;
-
 static uint32_t forward_counter = 0;
+
+/* =====================================================
+   CALIBRATION 
+===================================================== */
+static float gyro_bias_x = 0.0f;
+static float gyro_bias_y = 0.0f;
+static float gyro_bias_z = 0.0f;
+
+static float acc_bias_x = 0.0f;
+static float acc_bias_y = 0.0f;
+static float acc_bias_z = 0.0f;
 
 /* =====================================================
    SWING TIMING
@@ -75,8 +81,6 @@ static uint32_t forward_counter = 0;
 
 static swing_timing_t current_swing = {0};
 static uint32_t next_swing_id = 1;
-
-
 
 /* =====================================================
    FIND BACKSWING PEAK & ZERO CROSS (forward start)
@@ -104,6 +108,9 @@ void imu_processing_init(void)
     still_counter = 0;
 
     memset(&current_swing, 0, sizeof(current_swing));
+
+    gyro_bias_x = gyro_bias_y = gyro_bias_z = 0.0f;
+    acc_bias_x = acc_bias_y = acc_bias_z = 0.0f;
 
     printk("IMU processing upgraded ready\n");
 }
@@ -193,6 +200,97 @@ static uint32_t find_backswing_start_idx(uint32_t trigger_idx)
 }
 
 
+/* =====================================================
+   CALIBRATION
+===================================================== */
+
+void imu_processing_calibrate(void)
+{
+    imu_sample_t sample;
+    const int samples = 500;
+
+    float sum_ax = 0, sum_ay = 0, sum_az = 0;
+    float sum_gx = 0, sum_gy = 0, sum_gz = 0;
+
+    printk("Calibrating IMU... Keep it still!\n");
+
+    for (int i = 0; i < samples; i++)
+    {
+        imu_get_latest(&sample);
+
+        sum_ax += (sample.ax / 16384.0f) * 9.81f;
+        sum_ay += (sample.ay / 16384.0f) * 9.81f;
+        sum_az += (sample.az / 16384.0f) * 9.81f;
+
+        sum_gx += sample.gx * (2000.0f / 32768.0f);
+        sum_gy += sample.gy * (2000.0f / 32768.0f);
+        sum_gz += sample.gz * (2000.0f / 32768.0f);
+
+        k_msleep(5);
+    }
+
+    float avg_ax = sum_ax / samples;
+    float avg_ay = sum_ay / samples;
+    float avg_az = sum_az / samples;
+
+    float avg_gx = sum_gx / samples;
+    float avg_gy = sum_gy / samples;
+    float avg_gz = sum_gz / samples;
+
+    acc_bias_x = avg_ax;
+    acc_bias_y = avg_ay + 9.81f;    // Y-aksen er lodret, og avg_ay er ca. -9.81 m/s²
+    acc_bias_z = avg_az;
+
+    gyro_bias_x = avg_gx;
+    gyro_bias_y = avg_gy;
+    gyro_bias_z = avg_gz;
+
+    float corr_ax = avg_ax - acc_bias_x;
+    float corr_ay = avg_ay - acc_bias_y;
+    float corr_az = avg_az - acc_bias_z;
+
+    float corr_gx = avg_gx - gyro_bias_x;
+    float corr_gy = avg_gy - gyro_bias_y;
+    float corr_gz = avg_gz - gyro_bias_z;
+
+    printk("\n=== IMU CALIBRATION ===\n");
+
+    printk("ACC avg [m/s²]:  X=%.3f Y=%.3f Z=%.3f\n",
+           (double)avg_ax,
+           (double)avg_ay,
+           (double)avg_az);
+
+    printk("GYRO avg [dps]:  X=%.3f Y=%.3f Z=%.3f\n",
+           (double)avg_gx,
+           (double)avg_gy,
+           (double)avg_gz);
+
+    printk("ACC bias [m/s²]: X=%.3f Y=%.3f Z=%.3f\n",
+           (double)acc_bias_x,
+           (double)acc_bias_y,
+           (double)acc_bias_z);
+
+    printk("GYRO bias [dps]: X=%.3f Y=%.3f Z=%.3f\n",
+           (double)gyro_bias_x,
+           (double)gyro_bias_y,
+           (double)gyro_bias_z);
+        
+    printk("ACC corrected [m/s²]: X=%.3f Y=%.3f Z=%.3f | |acc|=%.3f\n",
+        (double)corr_ax,
+        (double)corr_ay,
+        (double)corr_az,
+        (double)sqrtf(corr_ax*corr_ax + corr_ay*corr_ay + corr_az*corr_az));
+
+    printk("GYRO corrected [dps]: X=%.3f Y=%.3f Z=%.3f | |gyro|=%.3f\n",
+        (double)corr_gx,
+        (double)corr_gy,
+        (double)corr_gz,
+        (double)sqrtf(corr_gx*corr_gx + corr_gy*corr_gy + corr_gz*corr_gz));
+
+    printk("=======================\n");
+
+}
+
 
 
 /* =====================================================
@@ -203,12 +301,12 @@ void imu_process_sample(const imu_sample_t *sample, uint32_t sample_idx)
 {
     /* ---------- Convert ---------- */
 
-    float ax = (sample->ax / 16384.0f) * 9.81f;
-    float ay = (sample->ay / 16384.0f) * 9.81f;
-    float az = (sample->az / 16384.0f) * 9.81f;
+    float ax = ((sample->ax / 16384.0f) * 9.81f) - acc_bias_x;
+    float ay = ((sample->ay / 16384.0f) * 9.81f) - acc_bias_y;
+    float az = ((sample->az / 16384.0f) * 9.81f) - acc_bias_z;
 
-    float gx = sample->gx * (2000.0f / 32768.0f);
-    float gy = sample->gy * (2000.0f / 32768.0f);
+    float gx = (sample->gx * (2000.0f / 32768.0f)) - gyro_bias_x;
+    float gy = (sample->gy * (2000.0f / 32768.0f)) - gyro_bias_y;
     float gz = (sample->gz * (2000.0f / 32768.0f)) - gyro_bias_z;
 
     float acc_mag = sqrtf(ax*ax + ay*ay + az*az);

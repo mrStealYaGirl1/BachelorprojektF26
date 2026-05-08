@@ -143,10 +143,6 @@ void swing_manager_thread(void *p1, void *p2, void *p3)
             {
                 printk("Processing swing event...\n");
 
-                
-
-                
-
                 if (!current_event_timing_valid)
                 {
                     printk("ERROR: timing not ready, skipping event\n");

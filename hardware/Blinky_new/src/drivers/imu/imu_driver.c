@@ -291,6 +291,7 @@ int imu_init(void)
 
     imu_ringbuffer_init();
     imu_processing_init();
+    imu_processing_calibrate();
 
     return 0;
 }
