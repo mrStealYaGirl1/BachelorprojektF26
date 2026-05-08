@@ -536,13 +536,14 @@ void imu_process_sample(const imu_sample_t *sample, uint32_t sample_idx)
                 current_swing.follow_start_us = sample->timestamp_us;
                 current_swing.follow_start_idx = sample_idx;
 
-                swing_manager_notify_impact(sample_idx,
-                                            sample->timestamp_us);
+                swing_manager_notify_impact(current_swing.impact_idx,
+                                            current_swing.impact_us);
 
                 swing_state = SWING_FOLLOW;
 
-                printk("IMPACT → FOLLOW\n");
-
+                printk("IMPACT -> FOLLOW idx=%u t=%llu us\n",
+                    current_swing.impact_idx,
+                    (unsigned long long)current_swing.impact_us);
                 break;
             }
 
