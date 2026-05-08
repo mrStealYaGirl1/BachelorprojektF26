@@ -89,3 +89,4 @@ void ble_send_imu_sample_for_event(const imu_sample_t *sample, uint16_t event_id
 void ble_post_init(void);
 bool ble_queue_imu_packet(const ble_imu_packet_t *packet);
 bool ble_queue_meta_packet(const ble_swing_meta_packet_t *packet);
+bool ble_is_tx_busy(void);

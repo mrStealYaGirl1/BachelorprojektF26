@@ -3,6 +3,7 @@
 #include "imu_processing.h"
 #include "../swing_manager/swing_manager.h"
 #include "../imu/imu_driver.h"
+#include "../ble/ble_driver.h"
 
 #include <zephyr/kernel.h>
 #include <zephyr/sys/printk.h>
@@ -119,6 +120,17 @@ void imu_processing_init(void)
     acc_bias_x = acc_bias_y = acc_bias_z = 0.0f;
 
     printk("IMU processing upgraded ready\n");
+}
+
+
+
+static void reset_impact_detector(void)
+{
+    memset(energy_buffer, 0, sizeof(energy_buffer));
+    energy_index = 0;
+    energy_sum = 0.0f;
+    prev_energy_sum = 0.0f;
+    cooldown_counter = 0;
 }
 
 /* =====================================================
@@ -319,6 +331,41 @@ void imu_process_sample(const imu_sample_t *sample, uint32_t sample_idx)
     float acc_dynamic = acc_mag - 9.81f;
 
     float gyro_mag = sqrtf(gx*gx + gy*gy + gz*gz);
+
+
+    // ignore impacts while BLE is busy
+    static bool ble_was_busy = false;
+
+    bool ble_busy = ble_is_tx_busy();
+
+    if (ble_busy)
+    {
+        if (!ble_was_busy)
+        {
+            printk("Ignoring impacts while BLE TX is busy\n");
+            reset_impact_detector();
+        }
+
+        ble_was_busy = true;
+        return;
+    }
+    else
+    {
+        if (ble_was_busy)
+        {
+            printk("BLE TX finished, impact detection enabled again\n");
+            reset_impact_detector();
+            ble_was_busy = false;
+
+            swing_state = SWING_IDLE;
+            still_counter = 0;
+            backswing_confirm = 0;
+            zero_cross_confirm = 0;
+            reset_confirm = 0;
+            address_wrong_dir_count = 0;
+            forward_counter = 0;
+        }
+    }
 
     /* =====================================================
        STATE MACHINE

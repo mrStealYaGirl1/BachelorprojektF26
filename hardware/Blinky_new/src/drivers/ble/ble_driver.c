@@ -605,3 +605,10 @@ static void adv_restart_handler(struct k_work *work)
     int err = start_advertising();
     printk("Advertising restart: %d\n", err);
 }
+
+
+
+bool ble_is_tx_busy(void)
+{
+    return ble_tx_busy || (k_msgq_num_used_get(&ble_tx_q) > 0);
+}
