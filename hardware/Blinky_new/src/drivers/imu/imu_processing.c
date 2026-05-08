@@ -33,6 +33,8 @@
 #define ADDRESS_OTHER_AXIS_DPS            60.0f
 #define ADDRESS_WRONG_CONFIRM_SAMPLES      3
 
+#define POST_SAMPLES 400   // 2 sek ved 200 Hz
+
 /* =====================================================
    ENERGY DETECTOR
 ===================================================== */
@@ -120,17 +122,6 @@ void imu_processing_init(void)
     acc_bias_x = acc_bias_y = acc_bias_z = 0.0f;
 
     printk("IMU processing upgraded ready\n");
-}
-
-
-
-static void reset_impact_detector(void)
-{
-    memset(energy_buffer, 0, sizeof(energy_buffer));
-    energy_index = 0;
-    energy_sum = 0.0f;
-    prev_energy_sum = 0.0f;
-    cooldown_counter = 0;
 }
 
 /* =====================================================
@@ -310,6 +301,14 @@ void imu_processing_calibrate(void)
 }
 
 
+static uint32_t samples_since(uint32_t from_idx, uint32_t to_idx)
+{
+    if (to_idx >= from_idx)
+        return to_idx - from_idx;
+
+    return (IMU_BUFFER_SIZE - from_idx) + to_idx;
+}
+
 
 /* =====================================================
    MAIN PROCESS
@@ -331,41 +330,6 @@ void imu_process_sample(const imu_sample_t *sample, uint32_t sample_idx)
     float acc_dynamic = acc_mag - 9.81f;
 
     float gyro_mag = sqrtf(gx*gx + gy*gy + gz*gz);
-
-
-    // ignore impacts while BLE is busy
-    static bool ble_was_busy = false;
-
-    bool ble_busy = ble_is_tx_busy();
-
-    if (ble_busy)
-    {
-        if (!ble_was_busy)
-        {
-            printk("Ignoring impacts while BLE TX is busy\n");
-            reset_impact_detector();
-        }
-
-        ble_was_busy = true;
-        return;
-    }
-    else
-    {
-        if (ble_was_busy)
-        {
-            printk("BLE TX finished, impact detection enabled again\n");
-            reset_impact_detector();
-            ble_was_busy = false;
-
-            swing_state = SWING_IDLE;
-            still_counter = 0;
-            backswing_confirm = 0;
-            zero_cross_confirm = 0;
-            reset_confirm = 0;
-            address_wrong_dir_count = 0;
-            forward_counter = 0;
-        }
-    }
 
     /* =====================================================
        STATE MACHINE
@@ -575,7 +539,7 @@ void imu_process_sample(const imu_sample_t *sample, uint32_t sample_idx)
         {
             forward_counter++;
 
-            if (detect_impact(acc_dynamic, gz))
+            if (!ble_is_tx_busy() && detect_impact(acc_dynamic, gz))
             {
                 current_swing.impact_us = sample->timestamp_us;
                 current_swing.impact_idx = sample_idx;
@@ -591,6 +555,7 @@ void imu_process_sample(const imu_sample_t *sample, uint32_t sample_idx)
                 printk("IMPACT -> FOLLOW idx=%u t=%llu us\n",
                     current_swing.impact_idx,
                     (unsigned long long)current_swing.impact_us);
+
                 break;
             }
 
@@ -608,7 +573,7 @@ void imu_process_sample(const imu_sample_t *sample, uint32_t sample_idx)
 
         case SWING_FOLLOW:
         {
-            if (gyro_mag < GZ_IDLE_DPS)
+            if (samples_since(current_swing.impact_idx, sample_idx) >= POST_SAMPLES)
             {
                 current_swing.end_us = sample->timestamp_us;
                 current_swing.end_idx = sample_idx;
@@ -617,8 +582,19 @@ void imu_process_sample(const imu_sample_t *sample, uint32_t sample_idx)
 
                 swing_state = SWING_IDLE;
 
-                printk("SWING END\n");
+                printk("SWING END after 2s\n");
             }
+            // if (gyro_mag < GZ_IDLE_DPS)
+            // {
+            //     current_swing.end_us = sample->timestamp_us;
+            //     current_swing.end_idx = sample_idx;
+
+            //     swing_manager_add_swing(current_swing);
+
+            //     swing_state = SWING_IDLE;
+
+            //     printk("SWING END\n");
+            // }
 
             break;
         }
