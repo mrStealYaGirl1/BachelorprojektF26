@@ -24,8 +24,13 @@
 
 #define SWING_CONFIRM_SAMPLES        2
 #define RESET_CONFIRM_SAMPLES       20
-#define FORWARD_TIMEOUT_SAMPLES    200
+#define FORWARD_TIMEOUT_SAMPLES    300
 
+#define ADDRESS_WRONG_DIR_DPS             -10.0f
+#define ADDRESS_WRONG_ROT_GYRO_MAG_DPS    30.0f
+#define ADDRESS_WRONG_ROT_GZ_MAX_DPS       8.0f
+#define ADDRESS_OTHER_AXIS_DPS            60.0f
+#define ADDRESS_WRONG_CONFIRM_SAMPLES      3
 
 /* =====================================================
    ENERGY DETECTOR
@@ -62,6 +67,7 @@ static uint32_t still_counter = 0;
 static uint8_t backswing_confirm = 0;
 static uint8_t zero_cross_confirm = 0;
 static uint8_t reset_confirm = 0;
+static uint8_t address_wrong_dir_count = 0;
 static uint32_t forward_counter = 0;
 
 /* =====================================================
@@ -245,49 +251,49 @@ void imu_processing_calibrate(void)
     gyro_bias_y = avg_gy;
     gyro_bias_z = avg_gz;
 
-    float corr_ax = avg_ax - acc_bias_x;
-    float corr_ay = avg_ay - acc_bias_y;
-    float corr_az = avg_az - acc_bias_z;
+    // float corr_ax = avg_ax - acc_bias_x;
+    // float corr_ay = avg_ay - acc_bias_y;
+    // float corr_az = avg_az - acc_bias_z;
 
-    float corr_gx = avg_gx - gyro_bias_x;
-    float corr_gy = avg_gy - gyro_bias_y;
-    float corr_gz = avg_gz - gyro_bias_z;
+    // float corr_gx = avg_gx - gyro_bias_x;
+    // float corr_gy = avg_gy - gyro_bias_y;
+    // float corr_gz = avg_gz - gyro_bias_z;
 
-    printk("\n=== IMU CALIBRATION ===\n");
+    // printk("\n=== IMU CALIBRATION ===\n");
 
-    printk("ACC avg [m/s²]:  X=%.3f Y=%.3f Z=%.3f\n",
-           (double)avg_ax,
-           (double)avg_ay,
-           (double)avg_az);
+    // printk("ACC avg [m/s²]:  X=%.3f Y=%.3f Z=%.3f\n",
+    //        (double)avg_ax,
+    //        (double)avg_ay,
+    //        (double)avg_az);
 
-    printk("GYRO avg [dps]:  X=%.3f Y=%.3f Z=%.3f\n",
-           (double)avg_gx,
-           (double)avg_gy,
-           (double)avg_gz);
+    // printk("GYRO avg [dps]:  X=%.3f Y=%.3f Z=%.3f\n",
+    //        (double)avg_gx,
+    //        (double)avg_gy,
+    //        (double)avg_gz);
 
-    printk("ACC bias [m/s²]: X=%.3f Y=%.3f Z=%.3f\n",
-           (double)acc_bias_x,
-           (double)acc_bias_y,
-           (double)acc_bias_z);
+    // printk("ACC bias [m/s²]: X=%.3f Y=%.3f Z=%.3f\n",
+    //        (double)acc_bias_x,
+    //        (double)acc_bias_y,
+    //        (double)acc_bias_z);
 
-    printk("GYRO bias [dps]: X=%.3f Y=%.3f Z=%.3f\n",
-           (double)gyro_bias_x,
-           (double)gyro_bias_y,
-           (double)gyro_bias_z);
+    // printk("GYRO bias [dps]: X=%.3f Y=%.3f Z=%.3f\n",
+    //        (double)gyro_bias_x,
+    //        (double)gyro_bias_y,
+    //        (double)gyro_bias_z);
         
-    printk("ACC corrected [m/s²]: X=%.3f Y=%.3f Z=%.3f | |acc|=%.3f\n",
-        (double)corr_ax,
-        (double)corr_ay,
-        (double)corr_az,
-        (double)sqrtf(corr_ax*corr_ax + corr_ay*corr_ay + corr_az*corr_az));
+    // printk("ACC corrected [m/s²]: X=%.3f Y=%.3f Z=%.3f | |acc|=%.3f\n",
+    //     (double)corr_ax,
+    //     (double)corr_ay,
+    //     (double)corr_az,
+    //     (double)sqrtf(corr_ax*corr_ax + corr_ay*corr_ay + corr_az*corr_az));
 
-    printk("GYRO corrected [dps]: X=%.3f Y=%.3f Z=%.3f | |gyro|=%.3f\n",
-        (double)corr_gx,
-        (double)corr_gy,
-        (double)corr_gz,
-        (double)sqrtf(corr_gx*corr_gx + corr_gy*corr_gy + corr_gz*corr_gz));
+    // printk("GYRO corrected [dps]: X=%.3f Y=%.3f Z=%.3f | |gyro|=%.3f\n",
+    //     (double)corr_gx,
+    //     (double)corr_gy,
+    //     (double)corr_gz,
+    //     (double)sqrtf(corr_gx*corr_gx + corr_gy*corr_gy + corr_gz*corr_gz));
 
-    printk("=======================\n");
+    // printk("=======================\n");
 
 }
 
@@ -329,7 +335,7 @@ void imu_process_sample(const imu_sample_t *sample, uint32_t sample_idx)
             else
                 still_counter = 0;
 
-            if (still_counter > 50)
+            if (still_counter > 100)   // stå stille i 0.5 s ved 200 Hz før vi går i ADDRESS
             {
                 memset(&current_swing, 0, sizeof(current_swing));
 
@@ -337,6 +343,12 @@ void imu_process_sample(const imu_sample_t *sample, uint32_t sample_idx)
 
                 current_swing.address_start_us = sample->timestamp_us;
                 current_swing.address_start_idx = sample_idx;
+                
+                backswing_confirm = 0;
+                zero_cross_confirm = 0;
+                reset_confirm = 0;
+                address_wrong_dir_count = 0;
+                forward_counter = 0;
 
                 swing_state = SWING_ADDRESS;
                 still_counter = 0;
@@ -348,20 +360,27 @@ void imu_process_sample(const imu_sample_t *sample, uint32_t sample_idx)
         }
 
         /* ---------------- ADDRESS ---------------- */
-
         case SWING_ADDRESS:
         {
+            /* ---------- gyldigt backswing ---------- */
+
             if (gz > GZ_BACKSWING_START_DPS)
+            {
                 backswing_confirm++;
+            }
             else
+            {
                 backswing_confirm = 0;
+            }
 
             if (backswing_confirm >= SWING_CONFIRM_SAMPLES)
             {
                 uint32_t trigger_idx =
-                    (sample_idx + IMU_BUFFER_SIZE - (SWING_CONFIRM_SAMPLES - 1)) % IMU_BUFFER_SIZE;
+                    (sample_idx + IMU_BUFFER_SIZE -
+                    (SWING_CONFIRM_SAMPLES - 1)) % IMU_BUFFER_SIZE;
 
-                uint32_t start_idx = find_backswing_start_idx(trigger_idx);
+                uint32_t start_idx =
+                    find_backswing_start_idx(trigger_idx);
 
                 current_swing.backswing_start_us =
                     imu_get_ringbuffer()->buffer[start_idx].timestamp_us;
@@ -372,13 +391,81 @@ void imu_process_sample(const imu_sample_t *sample, uint32_t sample_idx)
                 backswing_peak_idx = sample_idx;
 
                 swing_state = SWING_BACKSWING;
+
                 backswing_confirm = 0;
+                address_wrong_dir_count = 0;
 
                 printk("BACKSWING\n");
+                break;
+            }
+
+            /* ---------- ugyldige bevægelser ---------- */
+
+            bool wrong_direction =
+                (gz < ADDRESS_WRONG_DIR_DPS);
+
+            bool wrong_rotation_pattern =
+                (gyro_mag > ADDRESS_WRONG_ROT_GYRO_MAG_DPS &&
+                gz < ADDRESS_WRONG_ROT_GZ_MAX_DPS);
+
+            bool too_much_other_axis =
+                (fabsf(gx) > ADDRESS_OTHER_AXIS_DPS ||
+                fabsf(gy) > ADDRESS_OTHER_AXIS_DPS);
+
+            if (wrong_direction ||
+                wrong_rotation_pattern ||
+                too_much_other_axis)
+            {
+                address_wrong_dir_count++;
+            }
+            else
+            {
+                address_wrong_dir_count = 0;
+            }
+
+            if (address_wrong_dir_count >=
+                ADDRESS_WRONG_CONFIRM_SAMPLES)
+            {
+                swing_state = SWING_IDLE;
+
+                backswing_confirm = 0;
+                address_wrong_dir_count = 0;
+
+                printk("RESET from ADDRESS\n");
             }
 
             break;
         }
+        // case SWING_ADDRESS:
+        // {
+        //     if (gz > GZ_BACKSWING_START_DPS)
+        //         backswing_confirm++;
+        //     else
+        //         backswing_confirm = 0;
+
+        //     if (backswing_confirm >= SWING_CONFIRM_SAMPLES)
+        //     {
+        //         uint32_t trigger_idx =
+        //             (sample_idx + IMU_BUFFER_SIZE - (SWING_CONFIRM_SAMPLES - 1)) % IMU_BUFFER_SIZE;
+
+        //         uint32_t start_idx = find_backswing_start_idx(trigger_idx);
+
+        //         current_swing.backswing_start_us =
+        //             imu_get_ringbuffer()->buffer[start_idx].timestamp_us;
+
+        //         current_swing.backswing_start_idx = start_idx;
+
+        //         backswing_peak_gz = gz;
+        //         backswing_peak_idx = sample_idx;
+
+        //         swing_state = SWING_BACKSWING;
+        //         backswing_confirm = 0;
+
+        //         printk("BACKSWING\n");
+        //     }
+
+        //     break;
+        // }
 
         /* ---------------- BACKSWING ---------------- */
 
