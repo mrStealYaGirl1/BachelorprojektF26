@@ -859,7 +859,7 @@ static void reset_impact_detector(void)
 // Hvis denne skal bruges - husk at fjerne ESP_LOGI'er i imu_init og imu_calibrate for at undgå at forstyrre CSV output
 
 #define IMU_LOG_DURATION_MINUTES   4
-#define IMU_LOG_SAMPLE_PERIOD_MS   5   // 200 Hz
+#define IMU_LOG_SAMPLE_PERIOD_MS   5  // 200 Hz
 
 void imu_csv_logger_task(void *pvParameters)
 {
@@ -1081,4 +1081,58 @@ void imu_gz_angle_test_task(void *pvParameters)
 
         vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(5)); // 200 Hz
     }
+}
+
+
+
+// ===================================================== //
+// IMU RÅ DATA LOGGER
+// ===================================================== //
+#define IMU_LOG_DURATION_MINUTES   4
+#define IMU_LOG_SAMPLE_PERIOD_MS   1000   // 1 sample per sekund
+
+void imu_csv_logger_task_raadata(void *pvParameters)
+{
+    struct bmi2_sens_data sensor_data;
+    TickType_t last_wake = xTaskGetTickCount();
+
+    vTaskDelay(pdMS_TO_TICKS(500));
+
+    int64_t start_us = esp_timer_get_time();
+    int64_t duration_us =
+        (int64_t)IMU_LOG_DURATION_MINUTES * 60LL * 1000000LL;
+
+    /* CSV header */
+    printf("t_us,ax_raw,ay_raw,az_raw,gx_raw,gy_raw,gz_raw\n");
+
+    while ((esp_timer_get_time() - start_us) < duration_us)
+    {
+        if (bmi2_get_sensor_data(&sensor_data, &s_bmi) == BMI2_OK)
+        {
+            int64_t t_us = esp_timer_get_time();
+
+            /* rå accelerometer-værdier */
+            int16_t ax_raw = sensor_data.acc.x;
+            int16_t ay_raw = sensor_data.acc.y;
+            int16_t az_raw = sensor_data.acc.z;
+
+            /* rå gyroskop-værdier */
+            int16_t gx_raw = sensor_data.gyr.x;
+            int16_t gy_raw = sensor_data.gyr.y;
+            int16_t gz_raw = sensor_data.gyr.z;
+
+            /* print CSV */
+            printf("%lld,%d,%d,%d,%d,%d,%d\n",
+                   t_us,
+                   ax_raw, ay_raw, az_raw,
+                   gx_raw, gy_raw, gz_raw);
+        }
+
+        vTaskDelayUntil(
+            &last_wake,
+            pdMS_TO_TICKS(IMU_LOG_SAMPLE_PERIOD_MS)
+        );
+    }
+
+    vTaskDelete(NULL);
 }
