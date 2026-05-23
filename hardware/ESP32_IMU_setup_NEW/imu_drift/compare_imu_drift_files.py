@@ -6,7 +6,13 @@ import matplotlib.pyplot as plt
 from io import StringIO
 
 
-REQUIRED = ["t_us", "gx_raw", "gy_raw", "gz_raw", "gx_corr", "gy_corr", "gz_corr"]
+# Kun de kolonner som både gyro-only og gyro+acc filer har brug for
+REQUIRED = [
+    "t_us",
+    "gx_corr",
+    "gy_corr",
+    "gz_corr"
+]
 
 
 def load_csv(path: Path) -> pd.DataFrame:
@@ -14,8 +20,16 @@ def load_csv(path: Path) -> pd.DataFrame:
         lines = f.readlines()
 
     header_line = None
+
     for i, line in enumerate(lines):
-        if line.strip().startswith("t_us,gx_raw,gy_raw,gz_raw,gx_corr,gy_corr,gz_corr"):
+        header = line.strip()
+
+        if (
+            "t_us" in header
+            and "gx_corr" in header
+            and "gy_corr" in header
+            and "gz_corr" in header
+        ):
             header_line = i
             break
 
@@ -26,17 +40,21 @@ def load_csv(path: Path) -> pd.DataFrame:
     df = pd.read_csv(StringIO(csv_text))
 
     missing = [c for c in REQUIRED if c not in df.columns]
+
     if missing:
         raise ValueError(f"Mangler kolonner i {path.name}: {missing}")
 
     df = df[REQUIRED].copy()
+
     df["t_s"] = (df["t_us"] - df["t_us"].iloc[0]) / 1e6
+
     return df
 
 
 def integrate_angle(t: np.ndarray, rate: np.ndarray) -> np.ndarray:
     dt = np.diff(t, prepend=t[0])
     dt[0] = 0.0
+
     return np.cumsum(rate * dt)
 
 
@@ -47,6 +65,7 @@ def fit_drift_deg_per_min(t: np.ndarray, angle: np.ndarray) -> float:
 
 def analyze_file(path: Path) -> dict:
     df = load_csv(path)
+
     t = df["t_s"].to_numpy()
 
     gx = df["gx_corr"].to_numpy()
@@ -59,7 +78,6 @@ def analyze_file(path: Path) -> dict:
 
     return {
         "name": path.stem,
-        "df": df,
         "t": t,
         "gx": gx,
         "gy": gy,
@@ -88,8 +106,18 @@ def analyze_file(path: Path) -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("files", nargs="+", help="CSV-filer")
-    parser.add_argument("--save-plots", action="store_true")
+
+    parser.add_argument(
+        "files",
+        nargs="+",
+        help="CSV-filer"
+    )
+
+    parser.add_argument(
+        "--save-plots",
+        action="store_true"
+    )
+
     args = parser.parse_args()
 
     results = [analyze_file(Path(f)) for f in args.files]
@@ -98,10 +126,25 @@ def main() -> None:
     out_dir = Path(__file__).parent
 
     print("\nSammenligning:")
-    print(summary_df.to_string(index=False, float_format=lambda x: f"{x:.6f}"))
+    print(
+        summary_df.to_string(
+            index=False,
+            float_format=lambda x: f"{x:.6f}"
+        )
+    )
 
-    # Corr data sammenligning, gx/gy/gz i samme figur
-    fig_corr, axes_corr = plt.subplots(3, 1, figsize=(10, 9), sharex=True)
+    print(f"\nOutput-mappe: {out_dir.resolve()}")
+
+    # =====================================================
+    # Corr data sammenligning
+    # =====================================================
+
+    fig_corr, axes_corr = plt.subplots(
+        3,
+        1,
+        figsize=(10, 9),
+        sharex=True
+    )
 
     for r in results:
         axes_corr[0].plot(r["t"], r["gx"], label=r["name"])
@@ -111,23 +154,31 @@ def main() -> None:
     axes_corr[0].set_ylabel("gx_corr [dps]")
     axes_corr[0].set_title("Sammenligning af gx_corr")
     axes_corr[0].grid(True)
-    axes_corr[0].legend()
+    axes_corr[0].legend(loc="upper left", fontsize=6)
 
     axes_corr[1].set_ylabel("gy_corr [dps]")
     axes_corr[1].set_title("Sammenligning af gy_corr")
     axes_corr[1].grid(True)
-    axes_corr[1].legend()
+    axes_corr[1].legend(loc="upper left", fontsize=6)
 
     axes_corr[2].set_ylabel("gz_corr [dps]")
     axes_corr[2].set_title("Sammenligning af gz_corr")
     axes_corr[2].set_xlabel("Tid [s]")
     axes_corr[2].grid(True)
-    axes_corr[2].legend()
+    axes_corr[2].legend(loc="lower left", fontsize=6)
 
     plt.tight_layout()
 
-    # Integreret drift sammenligning, x/y/z i samme figur
-    fig_drift, axes_drift = plt.subplots(3, 1, figsize=(10, 9), sharex=True)
+    # =====================================================
+    # Integreret drift sammenligning
+    # =====================================================
+
+    fig_drift, axes_drift = plt.subplots(
+        3,
+        1,
+        figsize=(10, 9),
+        sharex=True
+    )
 
     for r in results:
         axes_drift[0].plot(r["t"], r["ax"], label=r["name"])
@@ -137,25 +188,33 @@ def main() -> None:
     axes_drift[0].set_ylabel("X-vinkel [deg]")
     axes_drift[0].set_title("Sammenligning af integreret x-drift")
     axes_drift[0].grid(True)
-    axes_drift[0].legend()
+    axes_drift[0].legend(loc="upper left", fontsize=6)
 
     axes_drift[1].set_ylabel("Y-vinkel [deg]")
     axes_drift[1].set_title("Sammenligning af integreret y-drift")
     axes_drift[1].grid(True)
-    axes_drift[1].legend()
+    axes_drift[1].legend(loc="upper left", fontsize=6)
 
     axes_drift[2].set_ylabel("Z-vinkel [deg]")
     axes_drift[2].set_title("Sammenligning af integreret z-drift")
     axes_drift[2].set_xlabel("Tid [s]")
     axes_drift[2].grid(True)
-    axes_drift[2].legend()
+    axes_drift[2].legend(loc="lower left", fontsize=6)
 
     plt.tight_layout()
+
+    # =====================================================
+    # Gem plots
+    # =====================================================
 
     if args.save_plots:
         fig_corr.savefig(out_dir / "compare_xyz_corr.png", dpi=200)
         fig_drift.savefig(out_dir / "compare_xyz_drift.png", dpi=200)
-        summary_df.to_csv(out_dir / "imu_drift_comparison_summary.csv", index=False)
+
+        summary_df.to_csv(
+            out_dir / "imu_drift_comparison_summary.csv",
+            index=False
+        )
 
         print("\nGemte filer:")
         print(f"- {out_dir / 'compare_xyz_corr.png'}")
