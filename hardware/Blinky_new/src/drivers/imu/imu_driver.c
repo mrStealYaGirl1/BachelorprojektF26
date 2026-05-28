@@ -364,3 +364,39 @@ void imu_thread(void *p1, void *p2, void *p3)
         k_sleep(K_TIMEOUT_ABS_MS(next));
     }
 }
+
+
+
+/* =====================================================
+   RAW IMU LOGGER
+   Printer rå accelerometer- og gyroskopværdier
+===================================================== */
+
+#define IMU_RAW_LOG_PERIOD_MS 1000   // 1 sample per sekund
+
+void imu_raw_logger_thread(void *p1, void *p2, void *p3)
+{
+    ARG_UNUSED(p1);
+    ARG_UNUSED(p2);
+    ARG_UNUSED(p3);
+
+    imu_sample_t sample;
+
+    printk("t_us,ax_raw,ay_raw,az_raw,gx_raw,gy_raw,gz_raw\n");
+
+    while (1)
+    {
+        imu_get_latest(&sample);
+
+        printk("%llu,%d,%d,%d,%d,%d,%d\n",
+               (unsigned long long)sample.timestamp_us,
+               sample.ax,
+               sample.ay,
+               sample.az,
+               sample.gx,
+               sample.gy,
+               sample.gz);
+
+        k_sleep(K_MSEC(IMU_RAW_LOG_PERIOD_MS));
+    }
+}

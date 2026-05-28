@@ -57,4 +57,6 @@ void imu_ringbuffer_push(const imu_sample_t *sample);
 void imu_get_latest(imu_sample_t *sample);
 imu_ringbuffer_t* imu_get_ringbuffer(void);
 
+void imu_raw_logger_thread(void *p1, void *p2, void *p3);
+
 #endif

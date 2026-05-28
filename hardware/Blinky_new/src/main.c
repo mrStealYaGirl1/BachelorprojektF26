@@ -75,12 +75,233 @@ int main(void)
                     K_NO_WAIT);
 
     printk("Swing manager thread started\n");
-
+    gpio_pin_toggle(gpio1, LED_PIN);
+    k_sleep(K_SECONDS(1));
+    gpio_pin_toggle(gpio1, LED_PIN);
     while (1) {
-        gpio_pin_toggle(gpio1, LED_PIN);
+        //gpio_pin_toggle(gpio1, LED_PIN);
         k_sleep(K_SECONDS(1));
     }
 }
+
+
+
+// //sende meta og imu data over BLE hvert minut - til strømforbrug-måling
+// #include <zephyr/kernel.h>
+// #include <zephyr/drivers/gpio.h>
+// #include <zephyr/sys/printk.h>
+// #include <SEGGER_RTT.h>
+
+// #include "drivers/ble/ble_driver.h"
+// #include "drivers/imu/imu_driver.h"
+// #include "drivers/imu/imu_processing.h"
+
+// #define LED_NODE DT_NODELABEL(gpio1)
+// #define LED_PIN 12
+
+// #define IMU_STACK_SIZE 4096
+// #define IMU_PRIORITY   5
+
+// #define TEST_PRE_SAMPLES   600
+// #define TEST_POST_SAMPLES  400
+// #define TEST_EVENT_SIZE    (TEST_PRE_SAMPLES + TEST_POST_SAMPLES)
+
+// #define TEST_SEND_INTERVAL_SECONDS 60
+
+// K_THREAD_STACK_DEFINE(imu_stack, IMU_STACK_SIZE);
+// static struct k_thread imu_thread_data;
+
+// static uint16_t test_event_id = 0;
+
+// static void fill_imu_packet_sample(ble_imu_packet_t *pkt,
+//                                    uint8_t sample_index,
+//                                    const imu_sample_t *sample,
+//                                    uint16_t seq)
+// {
+//     pkt->samples[sample_index].ax = sample->ax;
+//     pkt->samples[sample_index].ay = sample->ay;
+//     pkt->samples[sample_index].az = sample->az;
+
+//     pkt->samples[sample_index].gx = sample->gx;
+//     pkt->samples[sample_index].gy = sample->gy;
+//     pkt->samples[sample_index].gz = sample->gz;
+
+//     pkt->samples[sample_index].ts_ms = (uint32_t)(sample->timestamp_us / 1000ULL);
+//     pkt->samples[sample_index].seq = seq;
+// }
+
+// static void send_fake_valid_swing(void)
+// {
+//     uint16_t event_id = ++test_event_id;
+//     uint16_t seq = 0;
+
+//     printk("TEST: sending fake swing event_id=%u\n", event_id);
+
+//     uint64_t event_start_us = k_uptime_get() * 1000ULL;
+//     uint64_t impact_us = event_start_us + 3000000ULL; // fake impact efter 3 sek
+
+//     ble_swing_meta_packet_t meta = {0};
+
+//     meta.event_id = event_id;
+//     meta.packet_type = BLE_PKT_TYPE_META;
+
+//     meta.swing_id = event_id;
+
+//     meta.address_start_us   = event_start_us + 500000ULL;
+//     meta.backswing_start_us = event_start_us + 1500000ULL;
+//     meta.forward_start_us   = event_start_us + 2500000ULL;
+//     meta.impact_us          = impact_us;
+//     meta.follow_start_us    = event_start_us + 3300000ULL;
+//     meta.end_us             = event_start_us + 5000000ULL;
+
+//     meta.sample_rate_hz = IMU_SAMPLE_RATE_HZ;
+//     meta.total_samples = TEST_EVENT_SIZE;
+
+//     meta.pre_samples = TEST_PRE_SAMPLES;
+//     meta.post_samples = TEST_POST_SAMPLES;
+//     meta.impact_index_in_event = TEST_PRE_SAMPLES;
+
+//     meta.event_start_us = event_start_us;
+//     meta.event_end_us   = event_start_us + 5000000ULL;
+
+//     if (!ble_queue_meta_packet(&meta)) {
+//         printk("TEST: meta queue failed\n");
+//         return;
+//     }
+
+//     k_msleep(50);
+
+//     ble_imu_packet_t pkt = {0};
+
+//     pkt.event_id = event_id;
+//     pkt.packet_type = BLE_PKT_TYPE_IMU;
+//     pkt.sample_count = 0;
+
+//     for (uint32_t i = 0; i < TEST_EVENT_SIZE; i++)
+//     {
+//         imu_sample_t sample;
+//         imu_get_latest(&sample);
+
+//         fill_imu_packet_sample(&pkt, pkt.sample_count, &sample, seq++);
+
+//         pkt.sample_count++;
+
+//         if (pkt.sample_count >= BLE_SAMPLES_PER_PKT)
+//         {
+//             if (!ble_queue_imu_packet(&pkt)) {
+//                 printk("TEST: imu queue failed seq=%u\n", seq);
+//             }
+
+//             pkt.event_id = event_id;
+//             pkt.packet_type = BLE_PKT_TYPE_IMU;
+//             pkt.sample_count = 0;
+
+//             k_msleep(2);
+//         }
+
+//         k_msleep(5); // cirka 200 Hz
+//     }
+
+//     if (pkt.sample_count > 0)
+//     {
+//         if (!ble_queue_imu_packet(&pkt)) {
+//             printk("TEST: final imu queue failed\n");
+//         }
+//     }
+
+//     printk("TEST: fake swing queued event_id=%u samples=%u\n",
+//            event_id,
+//            TEST_EVENT_SIZE);
+// }
+
+// int main(void)
+// {
+//     const struct device *gpio1 = DEVICE_DT_GET(LED_NODE);
+
+//     SEGGER_RTT_WriteString(0, "BOOT\r\n");
+
+//     if (device_is_ready(gpio1)) {
+//         gpio_pin_configure(gpio1, LED_PIN, GPIO_OUTPUT_INACTIVE);
+//     }
+
+//     printk("Before BLE init\n");
+
+//     ble_init();
+
+//     while (!ble_is_stack_ready()) {
+//         printk("Waiting for BLE ready...\n");
+//         k_sleep(K_MSEC(100));
+//     }
+
+//     printk("BLE stack ready\n");
+
+//     ble_post_init();
+//     printk("BLE advertising started\n");
+
+//     printk("Before IMU init\n");
+
+//     if (imu_init() != 0) {
+//         printk("IMU init failed\n");
+//         return 0;
+//     }
+
+//     imu_processing_init();
+//     imu_ringbuffer_init();
+
+//     k_thread_create(&imu_thread_data,
+//                     imu_stack,
+//                     IMU_STACK_SIZE,
+//                     imu_thread,
+//                     NULL, NULL, NULL,
+//                     IMU_PRIORITY,
+//                     0,
+//                     K_NO_WAIT);
+
+//     printk("IMU thread started\n");
+
+//    while (1)
+//     {
+//         printk("TEST: preparing fake swing\n");
+
+//         printk("TEST: BLE TX started\n");
+//         gpio_pin_set(gpio1, LED_PIN, 1);
+
+//         send_fake_valid_swing();
+
+//         while (ble_is_tx_busy()) {
+//             k_sleep(K_MSEC(20));
+//         }
+
+//         gpio_pin_set(gpio1, LED_PIN, 0);
+//         printk("TEST: BLE TX done\n");
+
+//         printk("TEST: waiting %d seconds before next fake swing\n",
+//             TEST_SEND_INTERVAL_SECONDS);
+
+//         k_sleep(K_SECONDS(TEST_SEND_INTERVAL_SECONDS));
+//     }
+//  }
+
+
+ // print rå data 
+// int main(void)
+// {
+//     SEGGER_RTT_WriteString(0, "BOOT\r\n");
+
+//     printk("Before IMU init\n");
+
+//     if (imu_init() != 0) {
+//         printk("IMU init failed\n");
+//         return 0;
+//     }
+
+//     printk("IMU init OK\n");
+
+//     imu_raw_logger_thread(NULL, NULL, NULL);
+
+//     return 0;
+// }
+
 
 
 // ble connect virker
