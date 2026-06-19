@@ -9,21 +9,6 @@
 
 static const char *TAG = "MAIN";
 
-// // vis rå data i terminal
-// void app_main(void)
-// {
-//     imu_init();
-
-//     xTaskCreate(
-//         imu_csv_logger_task_raadata,
-//         "imu_csv_logger_task_raadata",
-//         4096,
-//         NULL,
-//         5,
-//         NULL
-//     );
-// }
-
 void app_main(void)
 {
     ESP_LOGI(TAG, "ESP32-FW starter");
@@ -57,6 +42,21 @@ void app_main(void)
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
+
+// // vis rå data i terminal
+// void app_main(void)
+// {
+//     imu_init();
+
+//     xTaskCreate(
+//         imu_csv_logger_task_raadata,
+//         "imu_csv_logger_task_raadata",
+//         4096,
+//         NULL,
+//         5,
+//         NULL
+//     );
+// }
 
 
 // /******************************************************************************************************/
